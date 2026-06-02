@@ -1,0 +1,23 @@
+# This file is the deployed Cloudflare Pages headers (output dir = ".").
+# public/_headers is used only during `vite dev` — do not rely on it for production.
+# If you ever switch to a Vite build step, consolidate headers here and delete public/_headers.
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Permissions-Policy: camera=(self), microphone=(), geolocation=(self), payment=(), usb=(), interest-cohort=(), browsing-topics=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://urls.insecure.co.nz; worker-src 'none'; media-src blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  Cache-Control: no-store
+
+/assets/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+  X-Content-Type-Options: nosniff
+
+/*.html
+  Cache-Control: no-cache, must-revalidate
+
+/transfer.html
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; worker-src 'none'; media-src blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';

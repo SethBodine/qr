@@ -1,0 +1,5 @@
+# DEV ONLY — this file is served by `vite dev` but is NOT deployed.
+# The output dir is the repo root (wrangler.toml: pages_build_output_dir = "."),
+# so only the root _headers and _redirects files are picked up by Cloudflare Pages.
+# Do not add production redirect rules here.
+/* /index.html 200

@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>QRForge — Free Custom QR Code Generator</title>
+  <meta name="description" content="Professional QR code generator — custom dot styles, gradients, logos, eye patterns, and multiple content types. Free, open source, no sign-up."/>
+  <meta name="theme-color" content="#00f5c8"/>
+  <meta property="og:title" content="QRForge — Free Custom QR Code Generator"/>
+  <meta property="og:description" content="Generate styled QR codes with logos, gradients, and custom patterns. 100% free."/>
+  <meta property="og:image" content="https://qr.insecure.co.nz/favicon-512.png"/>
+  <meta property="og:image:width" content="512"/>
+  <meta property="og:image:height" content="512"/>
+  <meta property="og:url" content="https://qr.insecure.co.nz/"/>
+  <meta property="og:type" content="website"/>
+  <link rel="canonical" href="https://qr.insecure.co.nz/"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2300f5c8'/><rect x='6' y='6' width='8' height='8' rx='1' fill='%23050510'/><rect x='18' y='6' width='8' height='8' rx='1' fill='%23050510'/><rect x='6' y='18' width='8' height='8' rx='1' fill='%23050510'/><rect x='19' y='19' width='4' height='4' fill='%23050510'/></svg>"/>
+  <link rel="stylesheet" href="assets/css/style.css"/>
+  <!-- qr-code-styling: full-featured QR renderer with styling, gradients, logos -->
+  <script src="https://cdn.jsdelivr.net/npm/qr-code-styling@1.9.2/lib/qr-code-styling.js"
+          integrity="sha384-P7sw4KeI1SDhOs6wYFsBysIIHFqMTgG4y9vunEfL8ZuV0WhnHsh9MRu9Rso17MtY"
+          crossorigin="anonymous"></script>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico"/>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"/>
+  <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192.png"/>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-logo">
+    <div class="nav-logo-mark">
+      <svg viewBox="0 0 18 18" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="#050510"/><rect x="11" y="1" width="6" height="6" rx="1" fill="#050510"/><rect x="1" y="11" width="6" height="6" rx="1" fill="#050510"/><rect x="12" y="12" width="3" height="3" fill="#050510"/></svg>
+    </div>
+    <span class="nav-logo-name">QR<span>Forge</span></span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="/" class="active">Generator</a></li>
+    <li><a href="/transfer.html">File Transfer</a></li>
+    <li><span class="nav-badge">Free Forever</span></li>
+  </ul>
+</nav>
+
+<main class="main">
+  <div class="section-header fade-in">
+    <h1>Custom QR <span class="highlight">Generator</span></h1>
+    <p>Professional-grade QR codes — custom styles, gradients, logos, and more. No account needed, no watermarks, no limits.</p>
+  </div>
+
+  <div class="grid-main">
+
+    <!-- ══════════════════ LEFT: CONTROLS ══════════════════ -->
+    <div class="left-col">
+
+      <!-- Content type tabs -->
+      <div class="card fade-in" style="animation-delay:0.05s">
+        <div class="card-title"><span class="dot"></span>Content</div>
+        <div class="tabs" id="typeTabs" role="tablist">
+          <button class="tab active" data-type="url" onclick="setType('url',this)">URL</button>
+          <button class="tab" data-type="text" onclick="setType('text',this)">Text</button>
+          <button class="tab" data-type="wifi" onclick="setType('wifi',this)">Wi-Fi</button>
+          <button class="tab" data-type="vcard" onclick="setType('vcard',this)">vCard</button>
+          <button class="tab" data-type="email" onclick="setType('email',this)">Email</button>
+          <button class="tab" data-type="phone" onclick="setType('phone',this)">Phone</button>
+          <button class="tab" data-type="sms" onclick="setType('sms',this)">SMS</button>
+          <button class="tab" data-type="geo" onclick="setType('geo',this)">Location</button>
+          <button class="tab" data-type="event" onclick="setType('event',this)">Event</button>
+          <button class="tab" data-type="whatsapp" onclick="setType('whatsapp',this)">WhatsApp</button>
+          <button class="tab" data-type="telegram" onclick="setType('telegram',this)">Telegram</button>
+          <button class="tab" data-type="bitcoin" onclick="setType('bitcoin',this)">Bitcoin</button>
+          <button class="tab" data-type="paypal" onclick="setType('paypal',this)">PayPal</button>
+          <button class="tab" data-type="appstore" onclick="setType('appstore',this)">App Store</button>
+        </div>
+
+        <!-- URL -->
+        <div id="f-url" class="type-fields">
+          <div class="field"><label>URL</label><input type="url" id="in-url" placeholder="https://example.com" oninput="schedule()"/></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:6px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)">
+            <input type="checkbox" id="trackToggle" onchange="applyShortener()" style="flex-shrink:0"/>
+            <div>
+              <label for="trackToggle" style="margin:0;text-transform:none;font-size:0.85rem;cursor:pointer;color:var(--text)"
+                title="Sends your URL to urls.insecure.co.nz (same operator). Records click count, country, and timestamp per scan. A hashed browser fingerprint is used as anonymous ownership — no account needed. Opt-in only.">
+                Track clicks via URL shortener ⓘ</label>
+              <div id="trackStatus" style="font-size:0.75rem;font-family:var(--font-mono);color:var(--text-muted);margin-top:2px"></div>
+            </div>
+          </div>
+        </div>
+        <!-- Text -->
+        <div id="f-text" class="type-fields" style="display:none">
+          <div class="field"><label>Message</label><textarea id="in-text" placeholder="Your text here…" oninput="schedule()"></textarea></div>
+        </div>
+        <!-- Wi-Fi -->
+        <div id="f-wifi" class="type-fields" style="display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="field"><label>Network (SSID)</label><input type="text" id="in-wifi-ssid" placeholder="MyNetwork" oninput="schedule()"/></div>
+            <div class="field"><label>Security</label><select id="in-wifi-sec" onchange="schedule()"><option value="WPA">WPA/WPA2</option><option value="WEP">WEP</option><option value="nopass">None</option></select></div>
+          </div>
+          <div class="field"><label>Password</label><input type="text" id="in-wifi-pass" placeholder="password" oninput="schedule()"/></div>
+          <div class="field" style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <input type="checkbox" id="in-wifi-hidden" onchange="schedule()"/>
+            <label for="in-wifi-hidden" style="margin:0;text-transform:none;font-size:0.85rem">Hidden network</label>
+          </div>
+        </div>
+        <!-- vCard -->
+        <div id="f-vcard" class="type-fields" style="display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="field"><label>First Name</label><input type="text" id="vc-first" oninput="schedule()"/></div>
+            <div class="field"><label>Last Name</label><input type="text" id="vc-last" oninput="schedule()"/></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="field"><label>Phone</label><input type="tel" id="vc-phone" oninput="schedule()"/></div>
+            <div class="field"><label>Email</label><input type="email" id="vc-email" oninput="schedule()"/></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="field"><label>Organisation</label><input type="text" id="vc-org" oninput="schedule()"/></div>
+            <div class="field"><label>Job Title</label><input type="text" id="vc-title" oninput="schedule()"/></div>
+          </div>
+          <div class="field"><label>Website</label><input type="url" id="vc-url" placeholder="https://" oninput="schedule()"/></div>
+          <div class="field"><label>Address</label><input type="text" id="vc-addr" placeholder="123 Main St, City, Country" oninput="schedule()"/></div>
+        </div>
+        <!-- Email -->
+        <div id="f-email" class="type-fields" style="display:none">
+          <div class="field"><label>To</label><input type="email" id="in-email-to" placeholder="hello@example.com" oninput="schedule()"/></div>
+          <div class="field"><label>Subject</label><input type="text" id="in-email-sub" placeholder="Subject line" oninput="schedule()"/></div>
+          <div class="field"><label>Body (optional)</label><textarea id="in-email-body" placeholder="Message body…" style="min-height:60px" oninput="schedule()"></textarea></div>
+        </div>
+        <!-- Phone -->
+        <div id="f-phone" class="type-fields" style="display:none">
+          <div class="field"><label>Phone Number</label><input type="tel" id="in-phone" placeholder="+64 9 000 0000" oninput="schedule()"/></div>
+        </div>
+        <!-- SMS -->
+        <div id="f-sms" class="type-fields" style="display:none">
+          <div class="field"><label>Phone Number</label><input type="tel" id="in-sms-to" placeholder="+64 9 000 0000" oninput="schedule()"/></div>
+          <div class="field"><label>Message (optional)</label><textarea id="in-sms-msg" placeholder="Pre-filled message…" style="min-height:60px" oninput="schedule()"></textarea></div>
+        </div>
+        <!-- Geo -->
+        <div id="f-geo" class="type-fields" style="display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="field"><label>Latitude</label><input type="number" id="in-geo-lat" placeholder="-36.8485" step="0.000001" oninput="schedule()"/></div>
+            <div class="field"><label>Longitude</label><input type="number" id="in-geo-lng" placeholder="174.7633" step="0.000001" oninput="schedule()"/></div>
+          </div>
+          <div class="field"><label>Label (optional)</label><input type="text" id="in-geo-label" placeholder="My Location" oninput="schedule()"/></div>
+          <button class="btn btn-ghost btn-sm" onclick="useMyLocation()" style="margin-top:4px">📍 Use my location</button>
+        </div>
+        <!-- Event -->
+        <div id="f-event" class="type-fields" style="display:none">
+          <div class="field"><label>Event Title</label><input type="text" id="ev-title" oninput="schedule()"/></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="field"><label>Start</label><input type="datetime-local" id="ev-start" oninput="schedule()"/></div>
+            <div class="field"><label>End</label><input type="datetime-local" id="ev-end" oninput="schedule()"/></div>
+          </div>
+          <div class="field"><label>Location</label><input type="text" id="ev-loc" oninput="schedule()"/></div>
+          <div class="field"><label>Description</label><textarea id="ev-desc" style="min-height:60px" oninput="schedule()"></textarea></div>
+        </div>
+        <!-- WhatsApp -->
+        <div id="f-whatsapp" class="type-fields" style="display:none">
+          <div class="field"><label>Phone Number (with country code)</label><input type="tel" id="in-wa-num" placeholder="+64 21 000 0000" oninput="schedule()"/></div>
+          <div class="field"><label>Pre-filled Message (optional)</label><textarea id="in-wa-msg" placeholder="Hello!" style="min-height:60px" oninput="schedule()"></textarea></div>
+        </div>
+        <!-- Telegram -->
+        <div id="f-telegram" class="type-fields" style="display:none">
+          <div class="field"><label>Username</label><input type="text" id="in-tg-user" placeholder="@username" oninput="schedule()"/></div>
+          <div class="field"><label>Pre-filled Message (optional)</label><textarea id="in-tg-msg" placeholder="Hello!" style="min-height:60px" oninput="schedule()"></textarea></div>
+        </div>
+        <!-- Bitcoin -->
+        <div id="f-bitcoin" class="type-fields" style="display:none">
+          <div class="field"><label>Bitcoin Address</label><input type="text" id="in-btc-addr" placeholder="1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf..." oninput="schedule()"/></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="field"><label>Amount (BTC, optional)</label><input type="number" id="in-btc-amount" placeholder="0.001" step="0.00000001" min="0" oninput="schedule()"/></div>
+            <div class="field"><label>Label (optional)</label><input type="text" id="in-btc-label" placeholder="Donation" oninput="schedule()"/></div>
+          </div>
+        </div>
+        <!-- PayPal -->
+        <div id="f-paypal" class="type-fields" style="display:none">
+          <div class="field"><label>PayPal Username</label><input type="text" id="in-pp-user" placeholder="yourname" oninput="schedule()"/></div>
+          <div class="field"><label>Amount (optional)</label><input type="text" id="in-pp-amount" placeholder="10.00" oninput="schedule()"/></div>
+        </div>
+        <!-- App Store / Play Store -->
+        <div id="f-appstore" class="type-fields" style="display:none">
+          <div class="field"><label>Platform</label><select id="in-app-platform" onchange="schedule()"><option value="android">Google Play Store</option><option value="ios">Apple App Store</option></select></div>
+          <div class="field"><label>App ID / Bundle ID</label><input type="text" id="in-app-id" placeholder="com.example.app" oninput="schedule()"/></div>
+        </div>
+      </div>
+
+      <!-- Style -->
+      <div class="card fade-in" style="animation-delay:0.1s">
+        <div class="card-title"><span class="dot"></span>Dot Style</div>
+
+        <div class="field">
+          <div class="style-grid" id="dotGrid">
+            <input type="radio" name="dots" id="d-square" value="square" class="style-option" checked>
+            <label for="d-square" class="style-label">
+              <svg width="32" height="32" viewBox="0 0 36 36" fill="currentColor"><rect x="2" y="2" width="10" height="10"/><rect x="24" y="2" width="10" height="10"/><rect x="2" y="24" width="10" height="10"/><rect x="14" y="4" width="3" height="3" opacity=".4"/><rect x="19" y="4" width="3" height="3" opacity=".4"/><rect x="14" y="9" width="3" height="3" opacity=".4"/><rect x="6" y="6" width="2" height="2" fill="white"/><rect x="28" y="6" width="2" height="2" fill="white"/><rect x="6" y="28" width="2" height="2" fill="white"/></svg>
+              Square
+            </label>
+            <input type="radio" name="dots" id="d-dots" value="dots" class="style-option">
+            <label for="d-dots" class="style-label">
+              <svg width="32" height="32" viewBox="0 0 36 36" fill="currentColor"><circle cx="7" cy="7" r="5"/><circle cx="29" cy="7" r="5"/><circle cx="7" cy="29" r="5"/><circle cx="16" cy="4" r="2" opacity=".4"/><circle cx="22" cy="4" r="2" opacity=".4"/><circle cx="16" cy="10" r="2" opacity=".4"/><circle cx="7" cy="7" r="2" fill="white"/><circle cx="29" cy="7" r="2" fill="white"/><circle cx="7" cy="29" r="2" fill="white"/></svg>
+              Dots
+            </label>
+            <input type="radio" name="dots" id="d-rounded" value="rounded" class="style-option">
+            <label for="d-rounded" class="style-label">
+              <svg width="32" height="32" viewBox="0 0 36 36" fill="currentColor"><rect x="2" y="2" width="10" height="10" rx="3"/><rect x="24" y="2" width="10" height="10" rx="3"/><rect x="2" y="24" width="10" height="10" rx="3"/><rect x="14" y="4" width="3" height="3" rx="1" opacity=".4"/><rect x="19" y="4" width="3" height="3" rx="1" opacity=".4"/></svg>
+              Rounded
+            </label>
+            <input type="radio" name="dots" id="d-extra-rounded" value="extra-rounded" class="style-option">
+            <label for="d-extra-rounded" class="style-label">
+              <svg width="32" height="32" viewBox="0 0 36 36" fill="currentColor"><rect x="2" y="2" width="10" height="10" rx="5"/><rect x="24" y="2" width="10" height="10" rx="5"/><rect x="2" y="24" width="10" height="10" rx="5"/><circle cx="16" cy="4" r="2" opacity=".4"/><circle cx="22" cy="4" r="2" opacity=".4"/></svg>
+              Fluid
+            </label>
+            <input type="radio" name="dots" id="d-classy" value="classy" class="style-option">
+            <label for="d-classy" class="style-label">
+              <svg width="32" height="32" viewBox="0 0 36 36" fill="currentColor"><rect x="2" y="2" width="10" height="10" rx="2"/><rect x="24" y="2" width="10" height="10" rx="2"/><rect x="2" y="24" width="10" height="10" rx="2"/><rect x="5" y="5" width="4" height="4" rx="1" fill="white"/><rect x="27" y="5" width="4" height="4" rx="1" fill="white"/><rect x="5" y="27" width="4" height="4" rx="1" fill="white"/></svg>
+              Classy
+            </label>
+            <input type="radio" name="dots" id="d-classy-rounded" value="classy-rounded" class="style-option">
+            <label for="d-classy-rounded" class="style-label">
+              <svg width="32" height="32" viewBox="0 0 36 36" fill="currentColor"><rect x="2" y="2" width="10" height="10" rx="4"/><rect x="24" y="2" width="10" height="10" rx="4"/><rect x="2" y="24" width="10" height="10" rx="4"/><rect x="5" y="5" width="4" height="4" rx="2" fill="white"/><rect x="27" y="5" width="4" height="4" rx="2" fill="white"/><rect x="5" y="27" width="4" height="4" rx="2" fill="white"/></svg>
+              Classy+
+            </label>
+          </div>
+        </div>
+
+        <!-- Dot colour / gradient -->
+        <div class="field">
+          <label>Dot Colour</label>
+          <label class="toggle-label">
+            <input type="checkbox" id="dotGradOn" onchange="toggleGrad('dot')"/>
+            Use gradient
+          </label>
+          <div class="color-row" id="dotSolid">
+            <input type="color" id="dotColor" value="#000000" oninput="syncCol('dot')"/>
+            <input type="text" id="dotHex" value="#000000" oninput="syncHex('dot')" maxlength="7"/>
+          </div>
+          <div class="gradient-panel" id="dotGrad">
+            <div class="gradient-row">
+              <div class="field"><label>Type</label><select id="dotGradType" onchange="schedule()"><option value="linear">Linear</option><option value="radial">Radial</option></select></div>
+              <div class="field"><label>Angle — <span id="dotAngLabel">0</span>°</label><input type="range" id="dotGradAngle" min="0" max="360" value="0" oninput="document.getElementById('dotAngLabel').textContent=this.value;schedule()"/></div>
+            </div>
+            <div class="gradient-row">
+              <div class="field"><label>Colour 1</label><div class="color-row"><input type="color" id="dotG1Color" value="#6d28d9" oninput="syncGCol('dotG1')"/><input type="text" id="dotG1Hex" value="#6d28d9" oninput="syncGHex('dotG1')" maxlength="7"/></div></div>
+              <div class="field"><label>Colour 2</label><div class="color-row"><input type="color" id="dotG2Color" value="#ec4899" oninput="syncGCol('dotG2')"/><input type="text" id="dotG2Hex" value="#ec4899" oninput="syncGHex('dotG2')" maxlength="7"/></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Background colour / gradient -->
+        <div class="field">
+          <label>Background Colour</label>
+          <label class="toggle-label">
+            <input type="checkbox" id="bgGradOn" onchange="toggleGrad('bg')"/>
+            Use gradient
+          </label>
+          <div class="color-row" id="bgSolid">
+            <input type="color" id="bgColor" value="#ffffff" oninput="syncCol('bg')"/>
+            <input type="text" id="bgHex" value="#ffffff" oninput="syncHex('bg')" maxlength="7"/>
+          </div>
+          <div class="gradient-panel" id="bgGrad">
+            <div class="gradient-row">
+              <div class="field"><label>Type</label><select id="bgGradType" onchange="schedule()"><option value="linear">Linear</option><option value="radial">Radial</option></select></div>
+              <div class="field"><label>Angle — <span id="bgAngLabel">0</span>°</label><input type="range" id="bgGradAngle" min="0" max="360" value="0" oninput="document.getElementById('bgAngLabel').textContent=this.value;schedule()"/></div>
+            </div>
+            <div class="gradient-row">
+              <div class="field"><label>Colour 1</label><div class="color-row"><input type="color" id="bgG1Color" value="#ffffff" oninput="syncGCol('bgG1')"/><input type="text" id="bgG1Hex" value="#ffffff" oninput="syncGHex('bgG1')" maxlength="7"/></div></div>
+              <div class="field"><label>Colour 2</label><div class="color-row"><input type="color" id="bgG2Color" value="#f0f0ff" oninput="syncGCol('bgG2')"/><input type="text" id="bgG2Hex" value="#f0f0ff" oninput="syncGHex('bgG2')" maxlength="7"/></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Eye / Finder pattern -->
+      <div class="card fade-in" style="animation-delay:0.13s">
+        <div class="card-title"><span class="dot"></span>Eye Style <span class="badge badge-muted" style="font-size:0.65rem;margin-left:4px">Corner Patterns</span></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="field">
+            <label>Outer Eye</label>
+            <div class="style-grid-4">
+              <input type="radio" name="eyeSquare" id="es-square" value="square" class="style-option" checked>
+              <label for="es-square" class="style-label"><svg width="28" height="28" viewBox="0 0 28 28" fill="currentColor"><rect x="1" y="1" width="26" height="26" rx="0" fill="none" stroke="currentColor" stroke-width="4"/></svg>Square</label>
+              <input type="radio" name="eyeSquare" id="es-er" value="extra-rounded" class="style-option">
+              <label for="es-er" class="style-label"><svg width="28" height="28" viewBox="0 0 28 28" fill="currentColor"><rect x="1" y="1" width="26" height="26" rx="9" fill="none" stroke="currentColor" stroke-width="4"/></svg>Round</label>
+              <input type="radio" name="eyeSquare" id="es-dot" value="dot" class="style-option">
+              <label for="es-dot" class="style-label"><svg width="28" height="28" viewBox="0 0 28 28" fill="currentColor"><circle cx="14" cy="14" r="13" fill="none" stroke="currentColor" stroke-width="4"/></svg>Circle</label>
+            </div>
+          </div>
+          <div class="field">
+            <label>Inner Dot</label>
+            <div class="style-grid-4" style="grid-template-columns:repeat(2,1fr)">
+              <input type="radio" name="eyeDot" id="ed-square" value="square" class="style-option" checked>
+              <label for="ed-square" class="style-label"><svg width="28" height="28" viewBox="0 0 28 28" fill="currentColor"><rect x="6" y="6" width="16" height="16" rx="0"/></svg>Square</label>
+              <input type="radio" name="eyeDot" id="ed-dot" value="dot" class="style-option">
+              <label for="ed-dot" class="style-label"><svg width="28" height="28" viewBox="0 0 28 28" fill="currentColor"><circle cx="14" cy="14" r="8"/></svg>Dot</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Eye Colour <span style="color:var(--text-dim);font-size:0.7rem">(leave blank to match dots)</span></label>
+          <div class="color-row">
+            <input type="color" id="eyeColor" value="#000000" oninput="syncCol('eye')"/>
+            <input type="text" id="eyeHex" value="#000000" oninput="syncHex('eye')" maxlength="7"/>
+            <button class="btn btn-ghost btn-sm" onclick="resetEyeColor()" title="Match dot colour">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logo -->
+      <div class="card fade-in" style="animation-delay:0.16s">
+        <div class="card-title"><span class="dot"></span>Logo / Centre Image</div>
+        <div class="drop-zone" id="logoDrop"
+          onclick="document.getElementById('logoInput').click()"
+          ondragover="event.preventDefault();this.classList.add('drag-over')"
+          ondragleave="this.classList.remove('drag-over')"
+          ondrop="event.preventDefault();this.classList.remove('drag-over');handleLogo(event.dataTransfer.files[0])">
+          <div class="drop-zone-icon">🖼️</div>
+          <h3 id="logoDropTitle">Drop logo here</h3>
+          <p>PNG, SVG, JPEG — transparent PNGs look best<br>Error correction auto-sets to H when logo is added</p>
+          <input type="file" id="logoInput" accept="image/*" style="display:none" onchange="handleLogo(this.files[0])"/>
+        </div>
+        <div id="logoControls" style="display:none;margin-top:14px">
+          <div class="field">
+            <label>Logo Size — <span id="logoSzLabel">35</span>% of QR</label>
+            <input type="range" id="logoSize" min="10" max="50" value="35" oninput="document.getElementById('logoSzLabel').textContent=this.value;schedule()"/>
+          </div>
+          <div class="field">
+            <label>Logo Padding — <span id="logoPadLabel">5</span>px</label>
+            <input type="range" id="logoPad" min="0" max="20" value="5" oninput="document.getElementById('logoPadLabel').textContent=this.value;schedule()"/>
+          </div>
+          <div class="field">
+            <label>Hide QR dots behind logo</label>
+            <select id="logoHide" onchange="schedule()"><option value="true" selected>Yes (cleaner)</option><option value="false">No (more data)</option></select>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="removeLogo()">✕ Remove Logo</button>
+        </div>
+      </div>
+
+      <!-- Quality & Size -->
+      <div class="card fade-in" style="animation-delay:0.19s">
+        <div class="card-title"><span class="dot"></span>Quality &amp; Output</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="field">
+            <label>Error Correction</label>
+            <select id="ecLevel" onchange="schedule()">
+              <option value="L">L — 7% (small file)</option>
+              <option value="M" selected>M — 15% (default)</option>
+              <option value="Q">Q — 25% (logo recommended)</option>
+              <option value="H">H — 30% (maximum)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Quiet Zone — <span id="marginLabel">4</span> modules</label>
+            <input type="range" id="qrMargin" min="0" max="10" value="4" oninput="document.getElementById('marginLabel').textContent=this.value;schedule()"/>
+          </div>
+        </div>
+        <div class="field">
+          <label>Output Resolution — <span id="sizeLabel">1024</span>px</label>
+          <input type="range" id="qrSize" min="256" max="2048" step="64" value="1024" oninput="document.getElementById('sizeLabel').textContent=this.value;schedule()"/>
+        </div>
+      </div>
+
+      <!-- Preset Themes -->
+      <div class="card fade-in" style="animation-delay:0.22s">
+        <div class="card-title"><span class="dot"></span>Preset Themes</div>
+        <div class="theme-grid" id="themeGrid">
+          <button class="theme-btn" onclick="applyTheme('classic')"><div class="theme-swatch" style="background:#fff;border:2px solid #000"></div>Classic</button>
+          <button class="theme-btn" onclick="applyTheme('dark')"><div class="theme-swatch" style="background:#111;border:2px solid #00f5c8"></div>Night</button>
+          <button class="theme-btn" onclick="applyTheme('ocean')"><div class="theme-swatch" style="background:linear-gradient(135deg,#0ea5e9,#6366f1)"></div>Ocean</button>
+          <button class="theme-btn" onclick="applyTheme('sunset')"><div class="theme-swatch" style="background:linear-gradient(135deg,#f97316,#ec4899)"></div>Sunset</button>
+          <button class="theme-btn" onclick="applyTheme('forest')"><div class="theme-swatch" style="background:linear-gradient(135deg,#22c55e,#059669)"></div>Forest</button>
+          <button class="theme-btn" onclick="applyTheme('neon')"><div class="theme-swatch" style="background:#0a0a1a;border:2px solid #00f5c8"></div>Neon</button>
+          <button class="theme-btn" onclick="applyTheme('gold')"><div class="theme-swatch" style="background:linear-gradient(135deg,#f59e0b,#fbbf24)"></div>Gold</button>
+          <button class="theme-btn" onclick="applyTheme('candy')"><div class="theme-swatch" style="background:linear-gradient(135deg,#f0abfc,#818cf8)"></div>Candy</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ══════════════════ RIGHT: PREVIEW ══════════════════ -->
+    <div class="right-col">
+
+      <div class="card glow fade-in" style="animation-delay:0.25s">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:0"><span class="dot"></span>Preview</div>
+          <div id="qrBadge" class="badge badge-muted">—</div>
+        </div>
+        <div class="qr-display" id="qrDisplay">
+          <div class="qr-placeholder"><div>◼</div><p style="font-size:0.8rem">Enter content to generate</p></div>
+        </div>
+        <div id="qrMeta" style="display:none;margin-top:12px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="qrMetaBadges"></div>
+          <div class="hash-display valid" id="qrHash"></div>
+        </div>
+
+        <!-- Scan test -->
+        <div id="scanTestRow" style="display:none;margin-top:10px">
+          <button class="btn btn-ghost btn-sm btn-full" onclick="runScanTest()">🔍 Verify QR is scannable</button>
+          <div class="scan-result alert" id="scanResult"></div>
+        </div>
+      </div>
+
+      <!-- Download -->
+      <div class="btn-group" style="flex-direction:column">
+        <button class="btn btn-primary btn-full btn-lg" id="dlPng" onclick="dl('png')" disabled>↓ Download PNG</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button class="btn btn-secondary" id="dlSvg" onclick="dl('svg')" disabled>↓ SVG</button>
+          <button class="btn btn-secondary" id="dlJpg" onclick="dl('jpg')" disabled>↓ JPEG</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <button class="btn btn-ghost" id="dlTransparent" onclick="dl('transparent')" disabled title="PNG with transparent background">↓ Transparent</button>
+          <button class="btn btn-ghost" id="cpBtn" onclick="copyImg()" disabled>⎘ Copy</button>
+          <button class="btn btn-ghost" id="printBtn" onclick="window.print()" disabled>🖨 Print</button>
+        </div>
+      </div>
+
+      <!-- Transfer promo -->
+      <div class="card fade-in" id="transferCard" style="animation-delay:0.3s;background:linear-gradient(135deg,rgba(0,245,200,0.04),transparent)">
+        <div class="card-title" style="margin-bottom:8px"><span class="dot"></span>QR File Transfer</div>
+        <p style="color:var(--text-muted);font-size:0.82rem;line-height:1.5;margin-bottom:14px">Send files between devices using QR code streaming — no cloud, no cables.</p>
+        <a href="/transfer.html" class="btn btn-ghost btn-full">Open File Transfer →</a>
+      </div>
+
+    </div>
+
+  </div>
+</main>
+
+<footer class="footer">
+  <span>QRForge — Free · Open Source · No Third-Party Tracking</span>
+  <span><a href="https://github.com/SethBodine/qr" target="_blank" rel="noopener">GitHub</a> · <a href="https://pages.cloudflare.com" target="_blank" rel="noopener">Cloudflare Pages</a></span>
+</footer>
+
+<script src="assets/js/qr-generator.js"></script>
+</body>
+</html>

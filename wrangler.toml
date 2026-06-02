@@ -1,0 +1,14 @@
+name = "qrforge"
+pages_build_output_dir = "."
+compatibility_date = "2026-06-01"
+
+[vars]
+APP_NAME = "QRForge"
+
+# Override in Cloudflare dashboard > Settings > Environment variables.
+# Must match your production domain. Preview URLs (*.pages.dev) are also
+# allowed automatically by functions/api/log.js.
+ALLOWED_ORIGIN = "https://qr.insecure.co.nz"
+
+# Secrets — set via CLI, never committed:
+#   wrangler secret put DISCORD_WEBHOOK_URL
