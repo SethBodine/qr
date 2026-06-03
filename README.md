@@ -83,7 +83,9 @@ qrforge/
 ├── _headers              # Cloudflare Pages security headers (deployed)
 ├── public/_headers       # Headers for `vite dev` only — not deployed
 ├── wrangler.toml         # Cloudflare project config (name, output dir, env vars)
-
+└── .github/
+    └── workflows/
+        └── deploy.yml    # GitHub Actions workflow — deploys to Cloudflare Pages on push to main
 ```
 
 > **"Zero backend" clarification:** QRForge has no database, no file storage, and no user accounts. There is one Cloudflare Pages Function (`/api/log`) that receives transfer metadata from the browser and forwards it to a Discord webhook. No data is stored — the Function is stateless. All file data stays in browser memory.
@@ -114,7 +116,18 @@ wrangler secret put DISCORD_WEBHOOK_URL
 
 `wrangler.toml` sets the project name and output directory so you don't need to pass flags on every deploy. Secrets set via `wrangler secret put` are encrypted at rest and never appear in logs or git history.
 
+### Option C — GitHub Actions (auto-deploy on push to `main`)
 
+The workflow lives at `.github/workflows/deploy.yml`. It runs on every push to `main` and on pull requests. It checks out the repo and calls `cloudflare/wrangler-action@v3` (the official, actively maintained successor to the now-deprecated `pages-action`) to deploy the output directory `.` to Cloudflare Pages.
+
+Add these two secrets to your GitHub repository (**Settings → Secrets and variables → Actions**):
+
+| Secret | Where to find it |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) — create with **Cloudflare Pages: Edit** permission |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Dashboard → right sidebar |
+
+Push to `main` — CI handles the rest. Pull requests automatically get a preview URL at `https://<hash>.qrforge.pages.dev`.
 
 ---
 

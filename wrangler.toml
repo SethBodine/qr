@@ -1,6 +1,6 @@
 name = "qrforge"
 pages_build_output_dir = "."
-compatibility_date = "2026-06-01"
+compatibility_date = "2025-05-01"
 
 [vars]
 APP_NAME = "QRForge"

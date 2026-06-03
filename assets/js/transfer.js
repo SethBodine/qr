@@ -19,7 +19,17 @@
 //        Sent 5× at end. Receiver reassembles when all chunks seen.
 //
 //   CAL  { t:'C', seq, sz }
-//        Calibration probe frames. Receiver (or display measurement) times them.
+//        Calibration probe frames cycled by sender during the calibration phase.
+//        Receiver scans these to warm up BarcodeDetector; sender measures its own
+//        render throughput via requestAnimationFrame timing.
+//
+// SESSION JOIN
+// ────────────
+// Before any files are added the sender displays a join-link QR:
+//   https://qr.insecure.co.nz/transfer.html?sid=<sessionId>
+// The receiver scans this to open the page with ?sid= in the URL. On load,
+// the receiver auto-starts its camera and locks to that session ID — it will
+// ignore HDR frames from any other session.
 //
 // DATA FLOW
 // ─────────
@@ -53,6 +63,11 @@
 const MAX_FILES       = 100;
 const MAX_TOTAL_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB
 const QR_PX           = 420;   // pixel dimensions of generated QR
+const QR_MAX_CHARS    = 1273;  // qrcode.js v40-H byte-mode capacity (8-bit, ASCII payload)
+// Frame wrapper overhead: {"t":"D","s":65535,"fi":99,"ci":9999,"d":""} = 45 chars
+const QR_WRAPPER_OVERHEAD = 45;
+// Max safe raw bytes per chunk: floor((QR_MAX_CHARS - wrapper) * 3/4)
+const QR_MAX_CHUNK_BYTES = Math.floor((QR_MAX_CHARS - QR_WRAPPER_OVERHEAD) * 3 / 4);
 const HEADER_REPEATS  = 5;
 const END_REPEATS     = 5;
 
@@ -79,7 +94,7 @@ function makeState() {
     // TX
     files: [],          // { file, name, size, hash, compressed, chunkCount, chunks: Uint8Array[] }
     totalBytes: 0,
-    sessionId: null,
+    sessionId: randomId(8),  // generated immediately so join-QR shows before files are added
     txActive: false,
     txPaused: false,
     txFrames: [],       // pre-built JSON strings (all frames in order)
@@ -95,6 +110,7 @@ function makeState() {
     calFrames: 0,
     calStart: null,
     calTimer: null,
+    rxExpectedSid: null, // set from ?sid= URL param before camera starts
     // RX
     rxStream: null,
     rxFacingMode: 'environment',
@@ -139,8 +155,10 @@ async function handleFiles(fileList) {
   renderFileList();
   await hashAllFiles();
   updateSummary();
-  el('btnCalibrate').disabled = S.files.length === 0;
-  el('btnStart').disabled     = S.files.length === 0;
+  el('btnStart').disabled = S.files.length === 0;
+  // Mark step 1 (Share link) as done once files are being added
+  if (S.files.length > 0) advanceStep(2);
+  else advanceStep(1);
 }
 
 function sanitiseFilename(name) {
@@ -153,8 +171,9 @@ function removeFile(i) {
   S.files.splice(i, 1);
   renderFileList();
   updateSummary();
-  el('btnCalibrate').disabled = S.files.length === 0;
-  el('btnStart').disabled     = S.files.length === 0;
+  el('btnStart').disabled = S.files.length === 0;
+  if (S.files.length > 0) advanceStep(2);
+  else { advanceStep(1); showJoinQR(); }
 }
 
 function renderFileList() {
@@ -212,26 +231,34 @@ const CAL_SIZES   = [80, 150, 220, 360, 500, 680, 820];
 const CAL_FPS_TARGET = 8; // try to display at 8fps during cal
 const CAL_FRAMES_PER_SIZE = 6;
 
-async function startCalibration() {
+async function runCalibration() {
   if (S.calRunning) return;
   S.calRunning = true;
-  el('btnCalibrate').disabled = true;
-  el('btnCalibrate').textContent = '⟳ Calibrating…';
   el('txBadge').textContent = 'Calibrating';
   el('txBadge').className = 'badge badge-warn';
 
   const timings = []; // { sz, ms } per frame
 
+  // waitForPaint wraps rAF so we measure time until the browser has actually
+  // composited the frame — not just when the JS call returned. On mobile,
+  // canvas drawImage is submitted to the GPU asynchronously, so performance.now()
+  // immediately after QRCode() would always measure ~0ms. Two rAF calls are needed
+  // because the first fires at the start of the frame, the second after paint.
+  const waitForPaint = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
   for (const sz of CAL_SIZES) {
-    // Build a test frame of exactly this many bytes of payload
-    const payload = JSON.stringify({ t: 'C', seq: timings.length, sz,
-      d: randomB64(sz) });
+    // Clamp cal size to QR capacity so calibration itself never overflows
+    const safeSz = Math.min(sz, QR_MAX_CHUNK_BYTES);
+    const payload = JSON.stringify({ t: 'C', seq: timings.length, sz: safeSz,
+      d: randomB64(safeSz) });
     for (let j = 0; j < CAL_FRAMES_PER_SIZE; j++) {
       const t0 = performance.now();
       await renderQR(payload);
+      await waitForPaint(); // wait for GPU to actually composite the frame
       const t1 = performance.now();
-      timings.push({ sz, ms: t1 - t0 });
-      await sleep(1000 / CAL_FPS_TARGET - (t1 - t0));
+      timings.push({ sz: safeSz, ms: t1 - t0 });
+      const remaining = 1000 / CAL_FPS_TARGET - (t1 - t0);
+      if (remaining > 0) await sleep(remaining);
     }
   }
 
@@ -242,8 +269,10 @@ async function startCalibration() {
   }
 
   // Find largest chunk size where median render ≤ 160ms (leaving headroom for fps control)
-  let bestSz = 80;
-  for (const sz of CAL_SIZES) {
+  // Only consider sizes that actually fit in a v40-H QR frame.
+  const SAFE_CAL_SIZES = CAL_SIZES.filter(sz => sz <= QR_MAX_CHUNK_BYTES);
+  let bestSz = SAFE_CAL_SIZES[0] || 80;
+  for (const sz of SAFE_CAL_SIZES) {
     const med = median(bySize[sz] || [999]);
     if (med <= 160) bestSz = sz;
   }
@@ -261,27 +290,31 @@ async function startCalibration() {
   el('fpsLabel').textContent = S.txFps;
 
   const bps = Math.round(bestSz * S.txFps);
+  // Update settings UI so the user can see what was selected
+  el('fpsSlider').value = S.txFps;
+  el('fpsLabel').textContent = S.txFps;
   el('calFps').textContent   = S.txFps;
   el('calBps').textContent   = fmtBytes(bps) + '/s';
   el('calChunk').textContent = bestSz + 'B';
   el('calibResult').style.display = 'block';
-  el('txBadge').textContent = 'Ready';
-  el('txBadge').className = 'badge badge-success';
-  el('btnCalibrate').disabled = false;
-  el('btnCalibrate').textContent = '⚡ Re-calibrate';
-  el('btnStart').disabled = false;
   S.calRunning = false;
   updateSummary();
-  toast(`Calibration done — ${bestSz}B chunks @ ${S.txFps} fps ≈ ${fmtBytes(bps)}/s`, 'success');
+  // Return to caller (startTransmission) — don't set badge here, caller does it
 }
 
 // ─── Transmission ──────────────────────────────────────────────────────────────
 async function startTransmission() {
   if (S.txActive || S.files.length === 0) return;
 
-  S.sessionId = randomId(8);
-  el('sessionIdBadge').textContent = `Session: ${S.sessionId}`;
-  el('sessionBadge').style.display = 'flex';
+  // sessionId was generated at page load — don't replace it, the join QR already used it
+  el('btnStart').disabled = true;
+  el('txBadge').textContent = 'Calibrating…';
+  el('txBadge').className   = 'badge badge-warn';
+  advanceStep(2);
+
+  // Run calibration silently (no separate button needed)
+  await runCalibration();
+
   S.txFps = parseInt(el('fpsSlider').value) || 4;
   S.txChunkBytes = getChunkBytes();
   S.txActive = true;
@@ -304,6 +337,16 @@ async function startTransmission() {
 
 async function buildFrames() {
   const chunkBytes = S.txChunkBytes;
+
+  // Pre-flight: ensure the requested chunk size actually fits in a v40-H QR code.
+  // If calibration over-selected (common on mobile where GPU paint is async),
+  // silently clamp to the safe maximum so frames never overflow.
+  if (chunkBytes > QR_MAX_CHUNK_BYTES) {
+    console.warn(`Chunk size ${chunkBytes}B exceeds QR capacity — clamping to ${QR_MAX_CHUNK_BYTES}B`);
+    S.txChunkBytes = QR_MAX_CHUNK_BYTES;
+  }
+  const safeChunkBytes = Math.min(chunkBytes, QR_MAX_CHUNK_BYTES);
+
   const compress   = el('compressMode').value;
   const frames     = [];
 
@@ -328,9 +371,9 @@ async function buildFrames() {
     }
 
     // Split into raw byte chunks, then base64url-encode each
-    const chunkCount = Math.ceil(data.length / chunkBytes);
+    const chunkCount = Math.ceil(data.length / safeChunkBytes);
     for (let ci = 0; ci < chunkCount; ci++) {
-      const slice = data.subarray(ci * chunkBytes, (ci + 1) * chunkBytes);
+      const slice = data.subarray(ci * safeChunkBytes, (ci + 1) * safeChunkBytes);
       frames.push(JSON.stringify({
         t: 'D',
         s: totalChunks & 0xFFFF,  // global seq (wraps)
@@ -406,10 +449,10 @@ function togglePause() {
 function stopTx() {
   clearTimeout(S.txTimer);
   S.txActive = false;
-  el('txBadge').textContent = 'Stopped';
-  el('txBadge').className   = 'badge badge-danger';
   el('txCtrlCard').style.display = 'none';
   el('btnPause').textContent = '⏸ Pause';
+  // Restore join QR so additional receivers can still scan in
+  showJoinQR();
 }
 
 function renderChecksums() {
@@ -447,7 +490,12 @@ async function renderQR(text) {
       });
     } catch (e) {
       console.warn('QR encode failed (payload too large?):', e.message);
-      return resolve(); // resolve even on failure so streaming continues
+      // Show a visible error tile instead of a silent white box
+      _qrContainer.innerHTML = `<div style="width:${QR_PX}px;height:${QR_PX}px;display:flex;
+        align-items:center;justify-content:center;background:#1a0000;border:2px solid #ff4444;
+        border-radius:8px;color:#ff4444;font-size:13px;text-align:center;padding:16px;box-sizing:border-box;">
+        ⚠ Frame too large for QR<br><small>Reduce chunk size</small></div>`;
+      return resolve();
     }
     // QRCode.js uses setTimeout internally for canvas drawing.
     // We wait 30ms — enough for a single event-loop turn plus rendering budget.
@@ -471,8 +519,10 @@ async function startCamera() {
   vid.srcObject = S.rxStream;
   await vid.play().catch(() => {});
 
-  el('cameraPrompt').style.display = 'none';
-  el('cameraActive').style.display = 'block';
+  el('cameraPrompt').style.display    = 'none';
+  const ap = el('autoStartPrompt');
+  if (ap) ap.style.display            = 'none';
+  el('cameraActive').style.display    = 'block';
   el('rxStatusWrap').style.display = 'block';
   el('rxSettingsCard').style.display = 'block';
   el('rxBadge').textContent = 'Scanning';
@@ -508,7 +558,11 @@ async function startCamera() {
 function stopCamera() {
   if (S.rxStream) { S.rxStream.getTracks().forEach(t => t.stop()); S.rxStream = null; }
   if (S.rxAnimFrame) { cancelAnimationFrame(S.rxAnimFrame); S.rxAnimFrame = null; }
-  el('cameraPrompt').style.display = 'block';
+  // Only show manual prompt if we weren't auto-started from a join link
+  if (!S.rxExpectedSid) {
+    const cp = el('cameraPrompt');
+    if (cp) cp.style.display = 'block';
+  }
   el('cameraActive').style.display = 'none';
   el('rxStatusWrap').style.display = 'none';
   el('rxSettingsCard').style.display = 'none';
@@ -571,6 +625,9 @@ function onHeader(f) {
   if (!f.sid || typeof f.sid !== 'string' || f.sid.length > 32) return;
   if (!Array.isArray(f.files) || f.files.length === 0 || f.files.length > MAX_FILES) return;
   if (typeof f.total !== 'number' || f.total < 1 || f.total > 1e6) return;
+
+  // If we arrived via a join-link, only accept the expected session
+  if (S.rxExpectedSid && f.sid !== S.rxExpectedSid) return;
 
   // Already processing this session?
   if (S.rxHeader && S.rxHeader.sid === f.sid) return;
@@ -764,7 +821,7 @@ async function logToDiscord(type) {
 
 // ─── Steps ─────────────────────────────────────────────────────────────────────
 function advanceStep(active) {
-  for (let i = 1; i <= 4; i++) {
+  for (let i = 1; i <= 3; i++) {
     const s = el(`step${i}`);
     if (!s) continue;
     s.className = i < active ? 'step done' : i === active ? 'step active' : 'step';
@@ -871,4 +928,58 @@ function toast(msg, type = 'info') {
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────────
-setMode('send');
+
+function init() {
+  // Check for ?sid= param — receiver arriving via join QR
+  const params = new URLSearchParams(window.location.search);
+  const sid    = params.get('sid');
+  if (sid && /^[A-Za-z0-9]{4,32}$/.test(sid)) {
+    S.rxExpectedSid = sid;
+    setMode('receive');
+    // Hide the manual "start camera" button and show the auto-starting notice
+    const cp = el('cameraPrompt');
+    const ap = el('autoStartPrompt');
+    if (cp) cp.style.display = 'none';
+    if (ap) ap.style.display = 'block';
+    // Auto-start camera — the URL navigation counts as a user gesture in most browsers.
+    // Wrap in rAF so the DOM is painted first.
+    requestAnimationFrame(() => startCamera());
+    return;
+  }
+
+  setMode('send');
+  showJoinQR();
+}
+
+function showJoinQR() {
+  // Render a join-link QR immediately — before files are added.
+  // The receiver scans this to open the page in receive mode.
+  const joinUrl = `${location.origin}${location.pathname}?sid=${S.sessionId}`;
+  el('sessionIdBadge').textContent = `Session: ${S.sessionId}`;
+  el('sessionBadge').style.display = 'flex';
+  renderJoinQR(joinUrl);
+}
+
+function renderJoinQR(url) {
+  const out = el('qrOut');
+  out.innerHTML = '';
+  const wrap = document.createElement('div');
+  out.appendChild(wrap);
+  try {
+    new QRCode(wrap, {
+      text: url,
+      width: QR_PX, height: QR_PX,
+      colorDark: '#000000', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M,  // M is fine for a URL — smaller, faster to scan
+    });
+  } catch(e) {
+    out.textContent = url; // fallback: just show the URL
+  }
+  el('txBadge').textContent = 'Waiting for receiver';
+  el('txBadge').className   = 'badge badge-info';
+  el('joinUrlDisplay').textContent = url;
+  el('joinUrlDisplay').href = url;
+  el('joinQrCaption').style.display = 'block';
+}
+
+init();

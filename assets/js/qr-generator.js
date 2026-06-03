@@ -291,15 +291,30 @@ function handleLogo(file) {
   if (!file) return;
   if (!file.type.startsWith('image/')) { toast('Only image files can be used as logos', 'warn'); return; }
   if (file.size > 4 * 1024 * 1024)    { toast('Logo must be under 4 MB', 'warn'); return; }
+
   const reader = new FileReader();
   reader.onload = e => {
-    logoDataUrl = e.target.result;
-    const title = document.getElementById('logoDropTitle');
-    if (title) title.textContent = file.name;
-    const controls = document.getElementById('logoControls');
-    if (controls) controls.style.display = 'block';
-    setVal('ecLevel', 'H'); // H correction is required when a logo obscures modules
-    schedule();
+    // Resize to max 512×512 before storing. Large images cause qr-code-styling to
+    // stall on canvas drawImage and render a white square, especially on mobile.
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 512;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const w = Math.round(img.width  * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      logoDataUrl = canvas.toDataURL('image/png');
+      const title = document.getElementById('logoDropTitle');
+      if (title) title.textContent = `${file.name} (${w}×${h})`;
+      const controls = document.getElementById('logoControls');
+      if (controls) controls.style.display = 'block';
+      setVal('ecLevel', 'H'); // H correction is required when a logo obscures modules
+      schedule();
+    };
+    img.onerror = () => toast('Could not load image — try a different file', 'warn');
+    img.src = e.target.result;
   };
   reader.readAsDataURL(file);
 }
@@ -339,7 +354,8 @@ function buildOptions(content) {
     : { color: bgHex };
 
   const imageOptions = logoDataUrl ? {
-    crossOrigin: 'anonymous',
+    // crossOrigin must NOT be set for data: URLs — it triggers CORS errors in some browsers
+    // and causes qr-code-styling to render a blank white square instead of the logo.
     imageSize:   Math.min(0.5, Math.max(0.1, (parseInt(document.getElementById('logoSize')?.value) || 35) / 100)),
     margin:      Math.min(20,  Math.max(0,   parseInt(document.getElementById('logoPad')?.value)  || 5)),
     hideBackgroundDots: document.getElementById('logoHide')?.value !== 'false',
@@ -505,7 +521,7 @@ async function runScanTest() {
 
   if (!('BarcodeDetector' in window)) {
     resultEl.className = 'scan-result alert alert-warn';
-    resultEl.textContent = '⚠ Scan test needs Chrome/Edge 83+ — use a phone scanner to verify';
+    resultEl.innerHTML = '⚠️ In-browser scan test requires Chrome or Edge 83+. To verify: open your camera app and point it at the QR code above.';
     return;
   }
 

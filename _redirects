@@ -1,0 +1,4 @@
+# Clean URL redirects — /transfer → /transfer.html (301 permanent)
+# Query strings (?sid=) are preserved automatically by Cloudflare Pages.
+/transfer   /transfer.html  301
+/generator  /index.html     301

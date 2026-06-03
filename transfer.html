@@ -6,6 +6,7 @@
   <title>QRForge — QR File Transfer</title>
   <meta name="description" content="Transfer files between devices using QR code streaming. No cloud, no apps, no installation required."/>
   <meta name="theme-color" content="#00f5c8"/>
+  <link rel="manifest" href="/public/site.webmanifest"/>
   <meta property="og:title" content="QRForge — QR File Transfer"/>
   <meta property="og:description" content="Stream files device-to-device via QR codes. Zero backend, full SHA-256 integrity."/>
   <meta property="og:image" content="https://qr.insecure.co.nz/favicon-512.png"/>
@@ -62,13 +63,11 @@
   <!-- ═══════════ SEND PANEL ═══════════ -->
   <div id="sendPanel">
     <div class="steps" id="stepsRow">
-      <div class="step active" id="step1"><div class="step-num">1</div>Select</div>
+      <div class="step active" id="step1"><div class="step-num">1</div>Share link</div>
       <div class="step-sep"></div>
-      <div class="step" id="step2"><div class="step-num">2</div>Calibrate</div>
+      <div class="step" id="step2"><div class="step-num">2</div>Add files</div>
       <div class="step-sep"></div>
-      <div class="step" id="step3"><div class="step-num">3</div>Stream</div>
-      <div class="step-sep"></div>
-      <div class="step" id="step4"><div class="step-num">4</div>Done</div>
+      <div class="step" id="step3"><div class="step-num">3</div>Send</div>
     </div>
 
     <div class="grid-main">
@@ -126,11 +125,10 @@
             </select>
           </div>
           <div class="alert alert-info" style="font-size:0.82rem;margin-top:4px">
-            💡 Run calibration first — it measures your actual camera+screen throughput and auto-tunes chunk size and frame rate.
+            💡 Speed is calibrated automatically when you press Send — no separate step needed.
           </div>
           <div class="btn-group" style="margin-top:14px">
-            <button class="btn btn-secondary" id="btnCalibrate" onclick="startCalibration()" disabled>⚡ Calibrate Speed</button>
-            <button class="btn btn-primary" id="btnStart" onclick="startTransmission()" disabled>▶ Start Transfer</button>
+            <button class="btn btn-primary btn-full" id="btnStart" onclick="startTransmission()" disabled>▶ Send</button>
           </div>
           <div id="calibResult" style="display:none;margin-top:14px;padding:12px;background:var(--bg);border-radius:var(--radius);border:1px solid rgba(0,245,200,0.15)">
             <div class="stats">
@@ -151,11 +149,15 @@
             <div class="badge badge-muted" id="txBadge">Ready</div>
           </div>
 
-          <div id="qrOut" style="background:#fff;border-radius:12px;min-height:320px;display:flex;align-items:center;justify-content:center;padding:16px">
-            <div class="qr-placeholder" style="text-align:center;opacity:0.3">
-              <div style="font-size:3rem">◼</div>
-              <p style="font-size:0.8rem;margin-top:8px">QR frames appear here</p>
-            </div>
+          <div id="qrOut" style="background:#fff;border-radius:12px;min-height:320px;display:flex;align-items:center;justify-content:center;padding:16px"></div>
+
+          <!-- Join-link caption shown while waiting for receiver -->
+          <div id="joinQrCaption" style="display:none;margin-top:12px;text-align:center">
+            <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">
+              Receiver scans this to open QRForge in receive mode
+            </p>
+            <a id="joinUrlDisplay" href="#" target="_blank" rel="noopener"
+               style="font-size:0.72rem;font-family:var(--font-mono);color:var(--accent);word-break:break-all;opacity:0.8"></a>
           </div>
 
           <div id="txProgressWrap" style="display:none;margin-top:16px">
@@ -198,6 +200,13 @@
             <div style="font-size:3rem;margin-bottom:12px">📷</div>
             <p style="margin-bottom:16px;color:var(--text-muted);font-size:0.88rem">Point your camera at the sender's screen. Camera access is only requested when you click below.</p>
             <button class="btn btn-primary" onclick="startCamera()">Start Camera &amp; Scan</button>
+          </div>
+
+          <!-- Auto-start message shown when arriving via join link -->
+          <div id="autoStartPrompt" style="display:none;text-align:center;padding:32px">
+            <div style="font-size:3rem;margin-bottom:12px">📡</div>
+            <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:6px">Starting camera…</p>
+            <p style="font-size:0.78rem;opacity:0.6">Point this device at the sender's screen once it appears</p>
           </div>
 
           <div id="cameraActive" style="display:none">

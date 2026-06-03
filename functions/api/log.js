@@ -122,7 +122,7 @@ export async function onRequestPost(context) {
   }
 }
 
-export function onRequestOptions(context) {
+export function onRequestOptions() {
   const origin = context.request.headers.get('Origin') || '';
   const allowedOrigin = (context.env && context.env.ALLOWED_ORIGIN) || 'https://qr.insecure.co.nz';
   const isAllowed =
