@@ -1,4 +1,8 @@
-# Clean URL redirects — /transfer → /transfer.html (301 permanent)
-# Query strings (?sid=) are preserved automatically by Cloudflare Pages.
-/transfer   /transfer.html  301
-/generator  /index.html     301
+# Cloudflare Pages natively serves clean URLs:
+#   /transfer       → serves transfer.html (no redirect needed)
+#   /transfer.html  → 308 canonical redirect to /transfer (CF does this automatically)
+#
+# Adding manual redirects here for these routes creates a redirect loop.
+# This file is intentionally minimal — only add rules CF cannot handle natively.
+#
+# ?sid= query strings pass through to static files transparently (no rule needed).
