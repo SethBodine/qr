@@ -111,7 +111,7 @@
         </div>
         <!-- Wi-Fi -->
         <div id="f-wifi" class="type-fields" style="display:none">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="grid-2">
             <div class="field"><label>Network (SSID)</label><input type="text" id="in-wifi-ssid" placeholder="MyNetwork" oninput="schedule()"/></div>
             <div class="field"><label>Security</label><select id="in-wifi-sec" onchange="schedule()"><option value="WPA">WPA/WPA2</option><option value="WEP">WEP</option><option value="nopass">None</option></select></div>
           </div>
@@ -123,15 +123,15 @@
         </div>
         <!-- vCard -->
         <div id="f-vcard" class="type-fields" style="display:none">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="grid-2">
             <div class="field"><label>First Name</label><input type="text" id="vc-first" oninput="schedule()"/></div>
             <div class="field"><label>Last Name</label><input type="text" id="vc-last" oninput="schedule()"/></div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="grid-2">
             <div class="field"><label>Phone</label><input type="tel" id="vc-phone" oninput="schedule()"/></div>
             <div class="field"><label>Email</label><input type="email" id="vc-email" oninput="schedule()"/></div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="grid-2">
             <div class="field"><label>Organisation</label><input type="text" id="vc-org" oninput="schedule()"/></div>
             <div class="field"><label>Job Title</label><input type="text" id="vc-title" oninput="schedule()"/></div>
           </div>
@@ -155,7 +155,7 @@
         </div>
         <!-- Geo -->
         <div id="f-geo" class="type-fields" style="display:none">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="grid-2">
             <div class="field"><label>Latitude</label><input type="number" id="in-geo-lat" placeholder="-36.8485" step="0.000001" oninput="schedule()"/></div>
             <div class="field"><label>Longitude</label><input type="number" id="in-geo-lng" placeholder="174.7633" step="0.000001" oninput="schedule()"/></div>
           </div>
@@ -165,7 +165,7 @@
         <!-- Event -->
         <div id="f-event" class="type-fields" style="display:none">
           <div class="field"><label>Event Title</label><input type="text" id="ev-title" oninput="schedule()"/></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="grid-2">
             <div class="field"><label>Start</label><input type="datetime-local" id="ev-start" oninput="schedule()"/></div>
             <div class="field"><label>End</label><input type="datetime-local" id="ev-end" oninput="schedule()"/></div>
           </div>
@@ -185,7 +185,7 @@
         <!-- Bitcoin -->
         <div id="f-bitcoin" class="type-fields" style="display:none">
           <div class="field"><label>Bitcoin Address</label><input type="text" id="in-btc-addr" placeholder="1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf..." oninput="schedule()"/></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="grid-2">
             <div class="field"><label>Amount (BTC, optional)</label><input type="number" id="in-btc-amount" placeholder="0.001" step="0.00000001" min="0" oninput="schedule()"/></div>
             <div class="field"><label>Label (optional)</label><input type="text" id="in-btc-label" placeholder="Donation" oninput="schedule()"/></div>
           </div>
@@ -292,7 +292,7 @@
       <div class="card fade-in" style="animation-delay:0.13s">
         <div class="card-title"><span class="dot"></span>Eye Style <span class="badge badge-muted" style="font-size:0.65rem;margin-left:4px">Corner Patterns</span></div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="grid-2 grid-2-lg">
           <div class="field">
             <label>Outer Eye</label>
             <div class="style-grid-4">
@@ -358,7 +358,7 @@
       <!-- Quality & Size -->
       <div class="card fade-in" style="animation-delay:0.19s">
         <div class="card-title"><span class="dot"></span>Quality &amp; Output</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="grid-2 grid-2-lg">
           <div class="field">
             <label>Error Correction</label>
             <select id="ecLevel" onchange="schedule()">
@@ -422,11 +422,11 @@
       <!-- Download -->
       <div class="btn-group" style="flex-direction:column">
         <button class="btn btn-primary btn-full btn-lg" id="dlPng" onclick="dl('png')" disabled>↓ Download PNG</button>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="grid-2 grid-btn">
           <button class="btn btn-secondary" id="dlSvg" onclick="dl('svg')" disabled>↓ SVG</button>
           <button class="btn btn-secondary" id="dlJpg" onclick="dl('jpg')" disabled>↓ JPEG</button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="grid-3 grid-btn">
           <button class="btn btn-ghost" id="dlTransparent" onclick="dl('transparent')" disabled title="PNG with transparent background">↓ Transparent</button>
           <button class="btn btn-ghost" id="cpBtn" onclick="copyImg()" disabled>⎘ Copy</button>
           <button class="btn btn-ghost" id="printBtn" onclick="window.print()" disabled>🖨 Print</button>
@@ -437,7 +437,7 @@
       <div class="card fade-in" id="transferCard" style="animation-delay:0.3s;background:linear-gradient(135deg,rgba(0,245,200,0.04),transparent)">
         <div class="card-title" style="margin-bottom:8px"><span class="dot"></span>QR File Transfer</div>
         <p style="color:var(--text-muted);font-size:0.82rem;line-height:1.5;margin-bottom:14px">Send files between devices using QR code streaming — no cloud, no cables.</p>
-        <a href="/transfer.html" class="btn btn-ghost btn-full">Open File Transfer →</a>
+        <a href="/transfer" class="btn btn-ghost btn-full">Open File Transfer →</a>
       </div>
 
     </div>

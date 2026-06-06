@@ -356,6 +356,12 @@
 
         <div id="txCtrlCard" style="display:none" class="card">
           <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn btn-secondary btn-full" id="skipWaitBtn"
+              onclick="skipWait()"
+              style="display:none"
+              title="Skip waiting and start streaming — use this if your receiver is already watching the screen">
+              ▶ Receiver is ready — start now
+            </button>
             <button class="btn btn-secondary btn-full" id="btnPause" onclick="togglePause()">⏸ Pause</button>
             <button class="btn btn-danger btn-full" onclick="stopTx()">✕ Cancel</button>
           </div>

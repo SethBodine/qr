@@ -70,9 +70,10 @@ const CHUNK_PRESETS    = { s: 80, m: 220, l: 460, xl: 820 };
 const CHUNK_AUTO_DEFAULT = 220;
 
 // ACK / pause thresholds
-const ACK_POLL_MS     = 1500;   // sender polls /api/ack every 1.5 s
-const ACK_TIMEOUT_MS  = 6000;   // pause TX if no ACK for 6 s
-const ACK_EVERY       = 10;     // receiver ACKs every N decoded frames
+const ACK_POLL_MS         = 1500;   // sender polls /api/ack every 1.5 s
+const ACK_TIMEOUT_MS      = 6000;   // pause TX if no ACK for 6 s during transfer
+const ACK_EVERY           = 10;     // receiver ACKs every N decoded frames
+const FIRST_ACK_GRACE_MS  = 20000;  // wait up to 20 s for first ACK before pausing
 
 // Calibration
 const CAL_SIZES          = [80, 150, 220, 360, 500, 680, 820];
@@ -287,8 +288,16 @@ async function startTransmission() {
   renderChecksums();
   logToDiscord('send');
 
-  // Start polling for ACKs from receiver
+  // Show join QR again so receiver can still scan in
+  showJoinQR();
+  setTxBadge('Waiting for receiver…', 'warn');
+  el('txCtrlCard').style.display = 'block';
+
+  // Wait for first receiver ACK before streaming data.
+  // Poll /api/ack; begin transfer once we see a seq response.
+  // After FIRST_ACK_GRACE_MS with no ACK, show a skip option.
   startAckPolling();
+  await waitForFirstAck();
   scheduleFrame();
 }
 
@@ -299,6 +308,38 @@ function seqGt(a, b) {
   if (b < 0) return true;   // anything > sentinel -1
   const diff = (a - b) & 0xFFFF;
   return diff > 0 && diff < 0x8000;
+}
+
+// ─── Wait for first receiver ACK before streaming ────────────────────────────
+async function waitForFirstAck() {
+  // Show "waiting" state with a skip button the user can tap if receiver is
+  // already scanning (e.g. laptop→laptop where user can see both screens)
+  el('skipWaitBtn').style.display = 'inline-flex';
+  setTxBadge('Waiting for receiver…', 'warn');
+
+  const start = Date.now();
+  while (!S.txAckReceived) {
+    await sleep(500);
+    const elapsed = Date.now() - start;
+    const remaining = Math.max(0, Math.ceil((FIRST_ACK_GRACE_MS - elapsed) / 1000));
+
+    if (elapsed < FIRST_ACK_GRACE_MS) {
+      setTxBadge(`Waiting for receiver… ${remaining}s`, 'warn');
+    } else {
+      // Grace period expired — pause and keep waiting indefinitely
+      // but now show a more prominent message
+      setTxBadge('No receiver found — scan the QR to join', 'danger');
+    }
+  }
+  el('skipWaitBtn').style.display = 'none';
+  setTxBadge('Receiver joined — starting', 'success');
+  await sleep(600); // brief visual confirmation
+}
+
+function skipWait() {
+  // User explicitly skips waiting — stream anyway (laptop→laptop, receiver already watching)
+  S.txAckReceived = true;
+  S.txLastAckTs   = Date.now();
 }
 
 // ─── ACK polling (sender side) ────────────────────────────────────────────────
@@ -363,8 +404,8 @@ function resumeAfterAck(ackedSeq) {
 
 function checkAckTimeout() {
   if (!S.txActive || S.txPaused) return;
-  // Don't time out before the first ack ever arrives — give receiver time to join
-  if (!S.txAckReceived) return;
+  // By the time scheduleFrame() runs, waitForFirstAck() has already completed,
+  // so txAckReceived is always true here. Check ongoing ACK health.
   if (Date.now() - S.txLastAckTs > ACK_TIMEOUT_MS) {
     S.txPaused = true;
     clearTimeout(S.txTimer);

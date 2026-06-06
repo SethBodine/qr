@@ -839,3 +839,56 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; 
   .card.glow { box-shadow: none; border: none; }
   .qr-display { padding: 0; background: transparent; }
 }
+
+/* ─── RESPONSIVE GRID UTILITIES ─────────────────────────────────────────────── */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.grid-2-lg { gap: 16px; }
+.grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.grid-btn { gap: 8px; }
+
+@media (max-width: 480px) {
+  .grid-2    { grid-template-columns: 1fr; }
+  .grid-2-lg { grid-template-columns: 1fr; }
+  .grid-3    { grid-template-columns: 1fr 1fr; }
+
+  /* Style picker grids tighten on very small screens */
+  .style-grid   { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .style-grid-4 { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .style-label  { padding: 8px 4px; font-size: 0.68rem; }
+  .style-label svg { width: 26px; height: 26px; }
+
+  /* Theme swatches tighter */
+  .theme-grid { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .theme-btn  { padding: 8px 4px; font-size: 0.68rem; }
+  .theme-swatch { width: 26px; height: 26px; }
+
+  /* Gradient rows always stack */
+  .gradient-row { grid-template-columns: 1fr; }
+
+  /* QR preview — full width, no min-height squish */
+  .qr-display { min-height: 200px; padding: 12px; }
+
+  /* Download buttons — 2-col for the 3-col row */
+  .grid-3.grid-btn { grid-template-columns: 1fr 1fr; }
+}
+
+/* Ensure preview column comes AFTER controls on mobile */
+@media (max-width: 900px) {
+  .grid-main {
+    display: flex;
+    flex-direction: column;
+  }
+  .right-col {
+    order: -1;        /* preview first on mobile so user sees QR immediately */
+    position: static;
+  }
+  .left-col { order: 1; }
+}
