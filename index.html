@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>QRForge — Free Custom QR Code Generator</title>
   <meta name="description" content="Professional QR code generator — custom dot styles, gradients, logos, eye patterns, and multiple content types. Free, open source, no sign-up."/>
-  <meta name="theme-color" content="#00f5c8"/>
+  <meta name="theme-color" content="#f5f6fa" media="(prefers-color-scheme: light)"/>
+  <meta name="theme-color" content="#07070f" media="(prefers-color-scheme: dark)"/>
   <link rel="manifest" href="/public/site.webmanifest"/>
   <meta property="og:title" content="QRForge — Free Custom QR Code Generator"/>
   <meta property="og:description" content="Generate styled QR codes with logos, gradients, and custom patterns. 100% free."/>
@@ -25,6 +26,13 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"/>
   <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192.png"/>
+  <script>
+    (function(){
+      const t = localStorage.getItem("qrf-theme") ||
+        (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
 </head>
 <body>
 
@@ -37,10 +45,21 @@
   </a>
   <ul class="nav-links">
     <li><a href="/" class="active">Generator</a></li>
-    <li><a href="/transfer.html">File Transfer</a></li>
+    <li><a href="/transfer">File Transfer</a></li>
     <li><span class="nav-badge">Free Forever</span></li>
   </ul>
+  <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+    <button class="btn-theme" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle light/dark mode">
+      <span class="icon-sun">☀️</span>
+      <span class="icon-moon">🌙</span>
+    </button>
+    <button class="btn-hamburger" onclick="toggleMenu()" aria-label="Menu">☰</button>
+  </div>
 </nav>
+<div class="nav-drawer" id="navDrawer">
+  <a href="/" class="active" onclick="toggleMenu()">Generator</a>
+  <a href="/transfer" onclick="toggleMenu()">File Transfer</a>
+</div>
 
 <main class="main">
   <div class="section-header fade-in">

@@ -2,19 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
   <title>QRForge — QR File Transfer</title>
   <meta name="description" content="Transfer files between devices using QR code streaming. No cloud, no apps, no installation required."/>
-  <meta name="theme-color" content="#00f5c8"/>
+  <meta name="theme-color" content="#f5f6fa" media="(prefers-color-scheme: light)"/>
+  <meta name="theme-color" content="#07070f" media="(prefers-color-scheme: dark)"/>
   <link rel="manifest" href="/public/site.webmanifest"/>
   <meta property="og:title" content="QRForge — QR File Transfer"/>
   <meta property="og:description" content="Stream files device-to-device via QR codes. Zero backend, full SHA-256 integrity."/>
   <meta property="og:image" content="https://qr.insecure.co.nz/favicon-512.png"/>
   <meta property="og:image:width" content="512"/>
   <meta property="og:image:height" content="512"/>
-  <meta property="og:url" content="https://qr.insecure.co.nz/transfer.html"/>
-  <link rel="canonical" href="https://qr.insecure.co.nz/transfer.html"/>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%2300f5c8'/><rect x='6' y='6' width='8' height='8' rx='1' fill='%23050510'/><rect x='18' y='6' width='8' height='8' rx='1' fill='%23050510'/><rect x='6' y='18' width='8' height='8' rx='1' fill='%23050510'/><rect x='19' y='19' width='4' height='4' fill='%23050510'/></svg>"/>
+  <meta property="og:url" content="https://qr.insecure.co.nz/transfer"/>
+  <link rel="canonical" href="https://qr.insecure.co.nz/transfer"/>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico"/>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"/>
+  <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192.png"/>
   <link rel="stylesheet" href="assets/css/style.css"/>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"
           integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU"
@@ -22,10 +26,156 @@
   <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"
           integrity="sha384-rNlaE5fs9dGIjmxWDALQh/RBAaGRYT5ChrzHo6tRfgrZ36iRFAiquP5g41Jsv+0j"
           crossorigin="anonymous"></script>
-  <link rel="icon" type="image/x-icon" href="/favicon.ico"/>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"/>
-  <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192.png"/>
+  <style>
+    /* ── Transfer-specific mobile-first overrides ── */
+    .transfer-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    @media (min-width: 860px) {
+      .transfer-grid {
+        grid-template-columns: 1fr 420px;
+        align-items: start;
+      }
+      .transfer-qr-col {
+        position: sticky;
+        top: 88px;
+      }
+    }
+
+    /* QR display — scales to viewport */
+    #qrOut {
+      background: #fff;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      min-height: 200px;
+    }
+    #qrOut canvas, #qrOut img {
+      max-width: 100%;
+      height: auto !important;
+      border-radius: 8px;
+    }
+
+    /* Camera container — fills available width */
+    .camera-container {
+      position: relative;
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      aspect-ratio: 4/3;
+    }
+    .camera-container video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .camera-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .scan-frame {
+      width: min(65%, 260px);
+      aspect-ratio: 1;
+      position: relative;
+    }
+    .scan-corner {
+      position: absolute;
+      width: 22px; height: 22px;
+      border-color: #00f5c8;
+      border-style: solid;
+      opacity: 0.9;
+    }
+    .scan-corner.tl { top:0; left:0;  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+    .scan-corner.tr { top:0; right:0; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+    .scan-corner.bl { bottom:0; left:0;  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+    .scan-corner.br { bottom:0; right:0; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+    .scan-line {
+      position: absolute;
+      left: 8%; right: 8%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #00f5c8, transparent);
+      animation: scanline 2s ease-in-out infinite;
+      top: 0;
+    }
+    @keyframes scanline {
+      0%   { top: 8%; opacity: 1; }
+      90%  { top: 90%; opacity: 1; }
+      100% { top: 8%; opacity: 0; }
+    }
+
+    /* Mobile-friendly touch targets */
+    @media (max-width: 600px) {
+      .btn { padding: 13px 18px; font-size: 0.92rem; }
+      .btn-sm { padding: 10px 14px; font-size: 0.85rem; }
+      .card { padding: 18px; }
+      .steps { gap: 0; font-size: 0.72rem; }
+      .step-num { width: 22px; height: 22px; font-size: 0.7rem; }
+      .drop-zone { padding: 24px 16px; }
+      .drop-zone h3 { font-size: 0.95rem; }
+    }
+
+    /* ACK progress row */
+    .progress-dual {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+    .progress-bar-ack { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .progress-fill-ack { height: 100%; background: rgba(0,245,200,0.45); border-radius: 2px; transition: width 0.5s; }
+
+    /* Mode toggle — full width on mobile */
+    .mode-toggle {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .mode-toggle .btn { flex: 1; }
+
+    /* Browser warning */
+    #browserWarning {
+      display: none;
+      margin-bottom: 16px;
+    }
+
+    /* Join QR caption */
+    #joinQrCaption {
+      display: none;
+      margin-top: 12px;
+      text-align: center;
+    }
+
+    /* Waiting / auto-start prompts */
+    .rx-prompt {
+      text-align: center;
+      padding: 32px 16px;
+    }
+    .rx-prompt .prompt-icon { font-size: 2.8rem; margin-bottom: 12px; }
+    .rx-prompt p { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px; }
+  </style>
+  <script>
+    (function(){
+      const t = localStorage.getItem("qrf-theme") ||
+        (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
 </head>
 <body>
 
@@ -38,31 +188,42 @@
   </a>
   <ul class="nav-links">
     <li><a href="/">Generator</a></li>
-    <li><a href="/transfer.html" class="active">File Transfer</a></li>
+    <li><a href="/transfer" class="active">File Transfer</a></li>
     <li><span class="nav-badge">Free Forever</span></li>
   </ul>
+  <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+    <button class="btn-theme" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle light/dark mode">
+      <span class="icon-sun">☀️</span>
+      <span class="icon-moon">🌙</span>
+    </button>
+    <button class="btn-hamburger" onclick="toggleMenu()" aria-label="Menu">☰</button>
+  </div>
 </nav>
+<div class="nav-drawer" id="navDrawer">
+  <a href="/" onclick="toggleMenu()">Generator</a>
+  <a href="/transfer" class="active" onclick="toggleMenu()">File Transfer</a>
+</div>
 
 <main class="main">
 
   <div class="section-header fade-in">
     <h1>QR <span class="highlight">File Transfer</span></h1>
-    <p>Stream files device-to-device via QR codes — no cloud, no apps, no cables. Files never leave your devices.</p>
+    <p>Stream files device-to-device via QR codes — no cloud, no apps, no cables.</p>
   </div>
 
-  <!-- Mode picker -->
-  <div style="display:flex;gap:10px;margin-bottom:28px;flex-wrap:wrap" class="fade-in">
-    <button class="btn btn-primary" id="btnSend" onclick="setMode('send')">📤 Send Files</button>
-    <button class="btn btn-secondary" id="btnReceive" onclick="setMode('receive')">📥 Receive Files</button>
-    <div style="flex:1"></div>
-    <div id="sessionBadge" style="display:none;align-items:center;gap:8px">
-      <span class="badge badge-success" id="sessionIdBadge"></span>
-    </div>
+  <!-- Mode toggle + session badge -->
+  <div class="mode-toggle fade-in">
+    <button class="btn btn-primary" id="btnSend" onclick="setMode('send')">📤 Send</button>
+    <button class="btn btn-secondary" id="btnReceive" onclick="setMode('receive')">📥 Receive</button>
+  </div>
+  <div id="sessionBadge" style="display:none;margin-bottom:16px">
+    <span class="badge badge-success" id="sessionIdBadge"></span>
   </div>
 
   <!-- ═══════════ SEND PANEL ═══════════ -->
   <div id="sendPanel">
-    <div class="steps" id="stepsRow">
+
+    <div class="steps" id="stepsRow" style="margin-bottom:20px">
       <div class="step active" id="step1"><div class="step-num">1</div>Share link</div>
       <div class="step-sep"></div>
       <div class="step" id="step2"><div class="step-num">2</div>Add files</div>
@@ -70,10 +231,11 @@
       <div class="step" id="step3"><div class="step-num">3</div>Send</div>
     </div>
 
-    <div class="grid-main">
-      <div class="left-col">
+    <div class="transfer-grid">
 
-        <!-- File selector -->
+      <!-- Left: files + settings -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+
         <div class="card">
           <div class="card-title"><span class="dot"></span>Files</div>
           <div class="drop-zone" id="dropZone"
@@ -82,8 +244,8 @@
             ondragleave="this.classList.remove('drag-over')"
             ondrop="event.preventDefault();this.classList.remove('drag-over');handleFiles(event.dataTransfer.files)">
             <div class="drop-zone-icon">📁</div>
-            <h3>Drop files here or click to browse</h3>
-            <p>Up to 100 files · 1 GB total per session<br>All processing is in-browser — nothing is uploaded</p>
+            <h3>Drop files here or tap to browse</h3>
+            <p>Up to 100 files · 1 GB total · nothing leaves your device</p>
             <input type="file" id="fileInput" multiple style="display:none" onchange="handleFiles(this.files)"/>
           </div>
           <div id="fileList" class="file-list" style="margin-top:10px"></div>
@@ -92,45 +254,45 @@
               <div class="stat"><div class="stat-value" id="statFiles">0</div><div class="stat-label">Files</div></div>
               <div class="stat"><div class="stat-value" id="statSize">0 B</div><div class="stat-label">Total</div></div>
               <div class="stat"><div class="stat-value" id="statChunks">—</div><div class="stat-label">Frames</div></div>
-              <div class="stat"><div class="stat-value" id="statETA">—</div><div class="stat-label">Est. Time</div></div>
+              <div class="stat"><div class="stat-value" id="statETA">—</div><div class="stat-label">Est.</div></div>
             </div>
           </div>
         </div>
 
-        <!-- Settings -->
         <div class="card">
-          <div class="card-title"><span class="dot"></span>Transfer Settings</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="card-title"><span class="dot"></span>Settings</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div class="field">
               <label>Chunk Size</label>
               <select id="chunkMode">
                 <option value="auto" selected>Auto (calibrated)</option>
-                <option value="s">Small — 80 bytes (safe)</option>
-                <option value="m">Medium — 220 bytes</option>
-                <option value="l">Large — 460 bytes</option>
-                <option value="xl">XL — 820 bytes (fast)</option>
+                <option value="s">Small — 80 B</option>
+                <option value="m">Medium — 220 B</option>
+                <option value="l">Large — 460 B</option>
+                <option value="xl">XL — 820 B</option>
               </select>
             </div>
             <div class="field">
-              <label>Frame Rate — <span id="fpsLabel">4</span> fps</label>
-              <input type="range" id="fpsSlider" min="1" max="20" value="4" oninput="document.getElementById('fpsLabel').textContent=this.value;updateETA()"/>
+              <label>FPS — <span id="fpsLabel">4</span></label>
+              <input type="range" id="fpsSlider" min="1" max="20" value="4"
+                     oninput="el('fpsLabel').textContent=this.value;updateETA()"/>
             </div>
           </div>
-          <div class="field">
+          <div class="field" style="margin-top:10px">
             <label>Compression</label>
             <select id="compressMode">
-              <option value="auto" selected>Auto (skip pre-compressed formats)</option>
-              <option value="on">Always compress</option>
-              <option value="off">No compression</option>
+              <option value="auto" selected>Auto</option>
+              <option value="on">Always</option>
+              <option value="off">Off</option>
             </select>
           </div>
-          <div class="alert alert-info" style="font-size:0.82rem;margin-top:4px">
-            💡 Speed is calibrated automatically when you press Send — no separate step needed.
+          <div class="alert alert-info" style="font-size:0.82rem;margin-top:10px">
+            💡 Calibration runs automatically on Send. Speed adapts to your receiver via HTTPS ACK.
           </div>
-          <div class="btn-group" style="margin-top:14px">
+          <div style="margin-top:14px">
             <button class="btn btn-primary btn-full" id="btnStart" onclick="startTransmission()" disabled>▶ Send</button>
           </div>
-          <div id="calibResult" style="display:none;margin-top:14px;padding:12px;background:var(--bg);border-radius:var(--radius);border:1px solid rgba(0,245,200,0.15)">
+          <div id="calibResult" style="display:none;margin-top:12px;padding:12px;background:var(--bg);border-radius:var(--radius);border:1px solid rgba(0,245,200,0.15)">
             <div class="stats">
               <div class="stat"><div class="stat-value" id="calFps">—</div><div class="stat-label">FPS</div></div>
               <div class="stat"><div class="stat-value" id="calBps">—</div><div class="stat-label">Byte/s</div></div>
@@ -141,31 +303,45 @@
 
       </div>
 
-      <!-- QR output -->
-      <div class="right-col">
+      <!-- Right: QR stream -->
+      <div class="transfer-qr-col" style="display:flex;flex-direction:column;gap:16px">
+
         <div class="card glow">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <div class="card-title" style="margin-bottom:0"><span class="dot"></span>QR Stream</div>
             <div class="badge badge-muted" id="txBadge">Ready</div>
           </div>
 
-          <div id="qrOut" style="background:#fff;border-radius:12px;min-height:320px;display:flex;align-items:center;justify-content:center;padding:16px"></div>
+          <div id="qrOut"></div>
 
-          <!-- Join-link caption shown while waiting for receiver -->
-          <div id="joinQrCaption" style="display:none;margin-top:12px;text-align:center">
+          <div id="joinQrCaption">
             <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px">
-              Receiver scans this to open QRForge in receive mode
+              Receiver scans this to open in receive mode
             </p>
             <a id="joinUrlDisplay" href="#" target="_blank" rel="noopener"
                style="font-size:0.72rem;font-family:var(--font-mono);color:var(--accent);word-break:break-all;opacity:0.8"></a>
           </div>
 
-          <div id="txProgressWrap" style="display:none;margin-top:16px">
-            <div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:0.78rem">
-              <span class="mono" id="txFrameLabel">Frame 0 / 0</span>
-              <span class="mono" id="txPct">0%</span>
+          <div id="txProgressWrap" style="display:none;margin-top:14px">
+            <div class="progress-dual">
+              <div>
+                <div class="progress-label">
+                  <span class="mono" id="txFrameLabel">Frame 0 / 0</span>
+                  <span class="mono" id="txPct">0%</span>
+                </div>
+                <div class="progress-bar" style="margin-top:4px">
+                  <div class="progress-fill" id="txBar" style="width:0%"></div>
+                </div>
+              </div>
+              <div>
+                <div class="progress-label">
+                  <span>Receiver ACK</span>
+                </div>
+                <div class="progress-bar-ack">
+                  <div class="progress-fill-ack" id="txAckBar" style="width:0%"></div>
+                </div>
+              </div>
             </div>
-            <div class="progress-bar"><div class="progress-fill" id="txBar" style="width:0%"></div></div>
             <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.75rem;color:var(--text-muted)">
               <span id="txElapsed">0s elapsed</span>
               <span id="txETA">—</span>
@@ -173,42 +349,50 @@
           </div>
 
           <div id="checksumPanel" style="display:none;margin-top:14px">
-            <div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">File Checksums (SHA-256)</div>
+            <div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">SHA-256</div>
             <div id="checksumList" style="display:flex;flex-direction:column;gap:5px"></div>
           </div>
         </div>
 
         <div id="txCtrlCard" style="display:none" class="card">
-          <div class="btn-group" style="flex-direction:column">
+          <div style="display:flex;flex-direction:column;gap:8px">
             <button class="btn btn-secondary btn-full" id="btnPause" onclick="togglePause()">⏸ Pause</button>
             <button class="btn btn-danger btn-full" onclick="stopTx()">✕ Cancel</button>
           </div>
         </div>
+
       </div>
     </div>
   </div>
 
   <!-- ═══════════ RECEIVE PANEL ═══════════ -->
   <div id="receivePanel" style="display:none">
-    <div class="grid-main">
-      <div class="left-col">
+
+    <!-- Browser support warning — shown before camera starts if unsupported -->
+    <div class="alert alert-danger" id="browserWarning"></div>
+
+    <div class="transfer-grid">
+
+      <!-- Left: camera -->
+      <div style="display:flex;flex-direction:column;gap:16px">
         <div class="card">
           <div class="card-title"><span class="dot"></span>Camera</div>
 
-          <!-- Camera not yet started -->
-          <div id="cameraPrompt" style="text-align:center;padding:32px;opacity:0.7">
-            <div style="font-size:3rem;margin-bottom:12px">📷</div>
-            <p style="margin-bottom:16px;color:var(--text-muted);font-size:0.88rem">Point your camera at the sender's screen. Camera access is only requested when you click below.</p>
-            <button class="btn btn-primary" onclick="startCamera()">Start Camera &amp; Scan</button>
+          <!-- Manual start -->
+          <div id="cameraPrompt" class="rx-prompt">
+            <div class="prompt-icon">📷</div>
+            <p>Point your camera at the sender's screen. Camera access is requested when you tap below.</p>
+            <button class="btn btn-primary btn-full" onclick="startCamera()">Start Camera &amp; Scan</button>
           </div>
 
-          <!-- Auto-start message shown when arriving via join link -->
-          <div id="autoStartPrompt" style="display:none;text-align:center;padding:32px">
-            <div style="font-size:3rem;margin-bottom:12px">📡</div>
-            <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:6px">Starting camera…</p>
-            <p style="font-size:0.78rem;opacity:0.6">Point this device at the sender's screen once it appears</p>
+          <!-- Auto-start (arrived via join link) -->
+          <div id="autoStartPrompt" style="display:none" class="rx-prompt">
+            <div class="prompt-icon">📡</div>
+            <p>Starting camera…</p>
+            <p style="font-size:0.78rem;opacity:0.6">Point this device at the sender's screen</p>
           </div>
 
+          <!-- Active camera -->
           <div id="cameraActive" style="display:none">
             <div class="camera-container" id="camContainer">
               <video id="camVideo" autoplay playsinline muted></video>
@@ -222,9 +406,9 @@
                 </div>
               </div>
             </div>
-            <div class="btn-group" style="margin-top:10px">
-              <button class="btn btn-ghost" id="btnSwitchCam" onclick="switchCamera()" style="display:none">🔄 Switch Camera</button>
-              <button class="btn btn-danger btn-sm" onclick="stopCamera()">■ Stop Camera</button>
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" id="btnSwitchCam" onclick="switchCamera()" style="display:none">🔄 Switch Camera</button>
+              <button class="btn btn-danger btn-sm" onclick="stopCamera()">■ Stop</button>
             </div>
           </div>
 
@@ -237,15 +421,14 @@
           <div class="card-title"><span class="dot"></span>Scan Settings</div>
           <div class="field">
             <label>Scan Rate — <span id="scanRateLabel">15</span>/sec</label>
-            <input type="range" id="scanRate" min="2" max="30" value="15" oninput="document.getElementById('scanRateLabel').textContent=this.value;updateScanInterval()"/>
-          </div>
-          <div id="noBarcodeDetector" style="display:none" class="alert alert-warn" style="font-size:0.82rem">
-            ⚠ Your browser doesn't support the BarcodeDetector API. Please use Chrome 83+, Edge, or a Chromium-based browser for QR scanning.
+            <input type="range" id="scanRate" min="2" max="30" value="15"
+                   oninput="el('scanRateLabel').textContent=this.value;updateScanInterval()"/>
           </div>
         </div>
       </div>
 
-      <div class="right-col">
+      <!-- Right: received files -->
+      <div style="display:flex;flex-direction:column;gap:16px">
         <div class="card glow">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
             <div class="card-title" style="margin-bottom:0"><span class="dot"></span>Received Files</div>
@@ -253,7 +436,7 @@
           </div>
 
           <div id="rxProgressWrap" style="display:none;margin-bottom:14px">
-            <div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:0.78rem">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:0.78rem">
               <span class="mono" id="rxFrameLabel">Chunk 0 / 0</span>
               <span class="mono" id="rxPct">0%</span>
             </div>
@@ -277,6 +460,7 @@
           <div id="rxChecksumList" style="display:flex;flex-direction:column;gap:6px"></div>
         </div>
       </div>
+
     </div>
   </div>
 

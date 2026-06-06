@@ -11,14 +11,24 @@
   Cross-Origin-Resource-Policy: same-origin
   Cache-Control: no-store
 
-# transfer.html needs media-src blob: for camera feed (getUserMedia → srcObject)
+# transfer.html needs media-src blob: for camera, connect-src for /api/ack
 /transfer.html
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' data:; worker-src 'none'; media-src 'self' blob:; object-src 'none'; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';
+
+# Same CSP for the canonical clean URL path
+/transfer
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' data:; worker-src 'none'; media-src 'self' blob:; object-src 'none'; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';
 
 # index.html (QR Generator) uses the URL shortener at urls.insecure.co.nz
 # and qr-code-styling fetches logo data: URIs internally via fetch()
 /index.html
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' data: https://urls.insecure.co.nz; worker-src 'none'; media-src 'none'; object-src 'none'; manifest-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';
+
+# API routes are Cloudflare Pages Functions — they set their own headers.
+# This block ensures any caching proxy in front never caches API responses.
+/api/*
+  Cache-Control: no-store, no-cache
+  X-Content-Type-Options: nosniff
 
 /assets/*
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800

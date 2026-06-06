@@ -137,9 +137,9 @@ Push to `main` — CI handles the rest. Pull requests automatically get a previe
 
 ```
 HDR  { t:'H', sid, v:1, files:[{i,n,s,h,tc,z}], total }
-DAT  { t:'D', s, fi, ci, d }     ← s=global seq, d=base64url chunk
+DAT  { t:'D', s, fi, ci, d }     ← s=global uint16 seq, d=base64url chunk
 END  { t:'E', sid, total }
-CAL  { t:'C', seq, sz, d }       ← calibration probe
+CAL  { t:'C', seq, sz, d }       ← calibration probe frame
 ```
 
 ### Transfer flow
@@ -147,6 +147,24 @@ CAL  { t:'C', seq, sz, d }       ← calibration probe
 Sender:  [HDR×5] [DAT×N...] [END×5]  → loops continuously
 Receiver: deduplicates by (fi,ci) → reassembles → SHA-256 → download
 ```
+
+### ACK / calibration handshake
+
+```
+Receiver  ──POST /api/ack { sid, seq:-1, fps }──▶  Cloudflare Function
+Sender    ──GET  /api/ack?sid=xxx              ──▶  { seq, fps, ts }
+```
+
+1. Sender streams **CAL frames** (42 total: 7 sizes × 6 frames each) while waiting for receiver
+2. Receiver decodes CAL frames, measures inter-frame interval, derives its actual decode fps
+3. Receiver POSTs `{ sid, seq:-1, fps }` to `/api/ack`
+4. Sender polls `/api/ack` every 1.5 s; on first fps response it sets `txFps = min(senderMax, rxFps × 0.9)` and begins transfer
+5. Receiver ACKs every 10 decoded data frames: POST `{ sid, seq }`
+6. Sender pauses after 6 s with no ACK; on resume it rewinds `txIndex` to the frame immediately after the last ACKed seq so the receiver fills any gap on the next loop pass
+
+Sequence numbers are uint16 (wrap at 65535). The sender uses half-range comparison (`seqGt`) so wrap-around does not cause a deadlock.
+
+The `/api/ack` endpoint is a stateless Cloudflare Pages Function with an in-memory Map (60 s TTL per session). No database, no KV — if the Worker isolate is recycled mid-session the receiver's next ACK repopulates the store and the sender resumes automatically.
 
 ### Chunk sizes (error correction H)
 | Preset | Bytes/frame | Typical use |
@@ -157,7 +175,7 @@ Receiver: deduplicates by (fi,ci) → reassembles → SHA-256 → download
 | XL     | 820 | Ideal conditions, tripod |
 
 ### Calibration
-Displays **42 test frames** (7 chunk sizes × 6 frames per size) at a fixed 8 fps target and measures actual render time per frame. Picks the largest chunk size whose median render time stays at or below 160 ms, then backs off the display rate by 20% to leave headroom. Caps at 15 fps since camera scan rate — not screen render rate — is the real bottleneck. The error correction level is fixed at H throughout.
+Displays **42 test frames** (7 chunk sizes × 6 frames per size) at a fixed 8 fps target. Uses double-`requestAnimationFrame` to measure actual GPU composite time, not just JS submission time (critical on mobile where canvas renders asynchronously). Picks the largest chunk size whose median render time is ≤ 160 ms, backs off 20%, caps at 15 fps. The receiver's measured decode rate from the ACK handshake may further reduce sender fps. Error correction is fixed at H throughout.
 
 ---
 
@@ -170,6 +188,16 @@ Displays **42 test frames** (7 chunk sizes × 6 frames per size) at a fixed 8 fp
 | [pako](https://github.com/nodeca/pako) | 2.1.0 | File Transfer | zlib/deflate compression of text-based file chunks |
 
 All three are loaded from jsDelivr CDN with **Subresource Integrity (SRI)** hashes — browsers will refuse to execute them if the CDN serves tampered files.
+
+### Cloudflare Pages Functions
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/log` | POST | Posts transfer metadata (filenames, sizes, SHA-256, IP, country) to a Discord webhook. Requires `DISCORD_WEBHOOK_URL` secret. |
+| `/api/ack` | POST | Receiver posts ACK `{ sid, seq, fps }` after decoding frames. Used for calibration handshake and pause/resume signalling. |
+| `/api/ack` | GET | Sender polls for latest receiver ACK. Returns `{ sid, seq, fps, ts }` or 404 if no ACK yet. |
+
+Both functions read `ALLOWED_ORIGIN` from environment variables (set in `wrangler.toml` or Cloudflare dashboard). Cloudflare Pages preview URLs (`*.qrforge.pages.dev`) are always allowed for development.
 
 ---
 
@@ -188,9 +216,11 @@ All three are loaded from jsDelivr CDN with **Subresource Integrity (SRI)** hash
 - **Security headers**: `X-Frame-Options: DENY`, `COOP: same-origin`, `CORP: same-origin`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`
 - **SRI hashes** on all CDN scripts — browsers reject tampered library files
 - **Discord webhook** stored as Cloudflare secret — never in git
-- **Camera permission** only requested when user actively clicks **Start Camera**
+- **Camera permission** only requested when user actively clicks **Start Camera**; browser support checked first with a specific actionable message if `BarcodeDetector` is absent
 - **`form-action 'none'`** in CSP — no form submissions permitted
 - **`robots.txt`** blocks crawlers from `/api/` endpoints
+- **`/api/*` headers** set `Cache-Control: no-store, no-cache` to prevent any proxy caching of ACK or log responses
+- **`/api/ack`** validates `sid` format, bounds-checks `seq` and `fps`, caps sessions at 500, evicts entries after 60 s
 - No cookies, no third-party analytics or tracking
 - URL click tracking is **opt-in only** and clearly labelled; a tooltip discloses what is collected before the user enables it
 
@@ -198,12 +228,11 @@ All three are loaded from jsDelivr CDN with **Subresource Integrity (SRI)** hash
 
 ## Browser Support
 
-| Feature | Chrome | Edge | Firefox | Safari |
-|---|---|---|---|---|
-| QR Generator | ✅ | ✅ | ✅ | ✅ |
-| File Transfer (Send) | ✅ | ✅ | ✅ | ✅ |
-| File Transfer (Receive) | ✅ 83+ | ✅ 83+ | ❌* | ❌* |
-| Copy to clipboard | ✅ | ✅ | ✅ 87+ | ✅ 13.1+ |
+| Feature | Chrome | Edge | Firefox | Safari | Chrome Android | Samsung Internet |
+|---|---|---|---|---|---|---|
+| QR Generator | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| File Transfer (Send) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| File Transfer (Receive) | ✅ 83+ | ✅ 83+ | ❌ | ❌ | ✅ | ✅ 13+ |
+| Copy to clipboard | ✅ | ✅ | ✅ 87+ | ✅ 13.1+ | ✅ | ✅ |
 
-\* Firefox and Safari do not support `BarcodeDetector`. Receive shows a clear warning.
-  Users on those browsers can send but not receive. The QR generator works everywhere.
+Firefox and Safari do not implement the `BarcodeDetector` API. On these browsers the receive panel detects the missing API before requesting camera permission and shows a specific message identifying the browser and recommending a supported alternative. Sending works on all browsers.

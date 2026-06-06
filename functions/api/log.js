@@ -122,16 +122,17 @@ export async function onRequestPost(context) {
   }
 }
 
-export function onRequestOptions() {
-  const origin = context.request.headers.get('Origin') || '';
+export function onRequestOptions(context) {
+  const origin       = context.request.headers.get('Origin') || '';
   const allowedOrigin = (context.env && context.env.ALLOWED_ORIGIN) || 'https://qr.insecure.co.nz';
   const isAllowed =
     origin === allowedOrigin ||
     /^https:\/\/[a-z0-9-]+\.qrforge\.pages\.dev$/.test(origin);
 
   return new Response(null, {
+    status: 204,
     headers: {
-      'Access-Control-Allow-Origin': isAllowed ? origin : allowedOrigin,
+      'Access-Control-Allow-Origin':  isAllowed ? origin : allowedOrigin,
       'Access-Control-Allow-Methods': 'POST',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Vary': 'Origin',
