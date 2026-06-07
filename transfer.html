@@ -170,11 +170,24 @@
     .rx-prompt p { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px; }
   </style>
   <script>
+    // ── Theme init (runs before paint to avoid flash) ──────────────────────────
     (function(){
-      const t = localStorage.getItem("qrf-theme") ||
-        (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      const t = localStorage.getItem("qrf-theme") || "light";
       document.documentElement.setAttribute("data-theme", t);
     })();
+
+    // ── Shared nav functions ───────────────────────────────────────────────────
+    function toggleTheme() {
+      const html = document.documentElement;
+      const next = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      html.setAttribute("data-theme", next);
+      localStorage.setItem("qrf-theme", next);
+    }
+
+    function toggleMenu() {
+      const drawer = document.getElementById("navDrawer");
+      if (drawer) drawer.classList.toggle("open");
+    }
   </script>
 </head>
 <body>

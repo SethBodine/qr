@@ -27,11 +27,24 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"/>
   <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192.png"/>
   <script>
+    // ── Theme init (runs before paint to avoid flash) ──────────────────────────
     (function(){
-      const t = localStorage.getItem("qrf-theme") ||
-        (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      const t = localStorage.getItem("qrf-theme") || "light";
       document.documentElement.setAttribute("data-theme", t);
     })();
+
+    // ── Shared nav functions ───────────────────────────────────────────────────
+    function toggleTheme() {
+      const html = document.documentElement;
+      const next = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      html.setAttribute("data-theme", next);
+      localStorage.setItem("qrf-theme", next);
+    }
+
+    function toggleMenu() {
+      const drawer = document.getElementById("navDrawer");
+      if (drawer) drawer.classList.toggle("open");
+    }
   </script>
 </head>
 <body>
