@@ -1,36 +1,26 @@
 // functions/api/ack.js — Cloudflare Pages Function
-// Lightweight in-memory ACK relay for QRForge transfer sessions.
+// Lightweight KV-backed ACK relay for QRForge transfer sessions.
 //
 // The receiver POSTs an ACK when it successfully decodes a frame.
 // The sender polls GET to learn the last ACKed sequence and receiver fps.
 //
-// Storage: a module-level Map (Cloudflare Worker isolate memory).
-// Entries expire after ACK_TTL_MS with no activity — no persistence needed.
-// A single isolate serves a session; if the isolate is recycled, the session
-// simply resumes from the last known good position on the next sender poll.
+// Storage: Cloudflare KV namespace bound as ACK_STORE.
+// Keys:    ack:{sid}  →  JSON { seq, fps, ts }
+// TTL:     60 seconds (KV native expiration — no manual eviction needed)
 //
-// POST /api/ack  { sid, seq, fps, ua }   → { ok: true }
-// GET  /api/ack?sid=xxx                  → { sid, seq, fps, ts } | { error }
-// OPTIONS /api/ack                       → CORS preflight
+// seq: -1 is a valid calibration sentinel (fps-only ACK, no data sequence).
+//
+// POST /api/ack  { sid, seq, fps }   → { ok: true }
+// GET  /api/ack?sid=xxx              → { sid, seq, fps, ts } | { error }
+// OPTIONS /api/ack                   → CORS preflight
 
-const ACK_TTL_MS  = 60_000;   // drop session from memory after 60s of silence
-const MAX_SESSIONS = 500;     // guard against unbounded growth
-const SID_RE       = /^[A-Za-z0-9]{4,32}$/;
-
-// Module-level store: sid → { seq, fps, ts }
-const store = new Map();
-
-function evict() {
-  const now = Date.now();
-  for (const [sid, v] of store) {
-    if (now - v.ts > ACK_TTL_MS) store.delete(sid);
-  }
-}
+const ACK_TTL_S = 60;          // KV entry expiry in seconds
+const SID_RE    = /^[A-Za-z0-9]{4,32}$/;
 
 function cors(env, request) {
-  const origin       = request.headers.get('Origin') || '';
-  const allowed      = env.ALLOWED_ORIGIN || 'https://qr.insecure.co.nz';
-  const isAllowed    = origin === allowed ||
+  const origin    = request.headers.get('Origin') || '';
+  const allowed   = env.ALLOWED_ORIGIN || 'https://qr.insecure.co.nz';
+  const isAllowed = origin === allowed ||
     /^https:\/\/[a-z0-9-]+\.qrforge\.pages\.dev$/.test(origin);
   return {
     'Access-Control-Allow-Origin':  isAllowed ? origin : allowed,
@@ -40,40 +30,42 @@ function cors(env, request) {
   };
 }
 
+function json(body, status, headers) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...headers },
+  });
+}
+
 export async function onRequestOptions(context) {
   return new Response(null, { status: 204, headers: cors(context.env, context.request) });
 }
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const h = cors(env, request);
+  const h   = cors(env, request);
   const url = new URL(request.url);
   const sid = url.searchParams.get('sid') || '';
 
-  if (!SID_RE.test(sid)) {
-    return new Response(JSON.stringify({ error: 'invalid sid' }),
-      { status: 400, headers: { 'Content-Type': 'application/json', ...h } });
-  }
+  if (!SID_RE.test(sid)) return json({ error: 'invalid sid' }, 400, h);
 
-  evict();
-  const entry = store.get(sid);
-  if (!entry) {
-    return new Response(JSON.stringify({ error: 'no ack yet', sid }),
-      { status: 404, headers: { 'Content-Type': 'application/json', ...h } });
-  }
+  if (!env.ACK_STORE) return json({ error: 'storage unavailable' }, 503, h);
 
-  return new Response(JSON.stringify({ sid, seq: entry.seq, fps: entry.fps, ts: entry.ts }),
-    { status: 200, headers: { 'Content-Type': 'application/json', ...h } });
+  const raw = await env.ACK_STORE.get(`ack:${sid}`);
+  if (!raw) return json({ error: 'no ack yet', sid }, 404, h);
+
+  let entry;
+  try { entry = JSON.parse(raw); } catch { return json({ error: 'corrupt entry' }, 500, h); }
+
+  return json({ sid, seq: entry.seq, fps: entry.fps ?? null, ts: entry.ts }, 200, h);
 }
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const h = cors(env, request);
-
+  const h  = cors(env, request);
   const ct = request.headers.get('Content-Type') || '';
-  if (!ct.includes('application/json')) {
-    return new Response(null, { status: 415, headers: h });
-  }
+
+  if (!ct.includes('application/json')) return new Response(null, { status: 415, headers: h });
 
   let body;
   try {
@@ -85,28 +77,28 @@ export async function onRequestPost(context) {
   }
 
   const { sid, seq, fps } = body;
-  if (!SID_RE.test(String(sid || ''))) {
-    return new Response(JSON.stringify({ error: 'invalid sid' }),
-      { status: 400, headers: { 'Content-Type': 'application/json', ...h } });
-  }
-  if (typeof seq !== 'number' || seq < 0 || seq > 0xFFFFFF) {
-    return new Response(JSON.stringify({ error: 'invalid seq' }),
-      { status: 400, headers: { 'Content-Type': 'application/json', ...h } });
-  }
 
-  // Evict expired sessions before potentially adding a new one
-  evict();
-  if (store.size >= MAX_SESSIONS && !store.has(sid)) {
-    return new Response(JSON.stringify({ error: 'server full' }),
-      { status: 503, headers: { 'Content-Type': 'application/json', ...h } });
-  }
+  if (!SID_RE.test(String(sid || '')))
+    return json({ error: 'invalid sid' }, 400, h);
 
-  store.set(sid, {
-    seq: seq,
-    fps: typeof fps === 'number' && fps > 0 && fps <= 30 ? Math.round(fps * 10) / 10 : null,
-    ts:  Date.now(),
+  // seq: -1 is the calibration sentinel (fps-only ACK, no data frame acked).
+  // Any non-negative value up to 0xFFFFFF is a valid data sequence number.
+  if (typeof seq !== 'number' || seq < -1 || seq > 0xFFFFFF || !Number.isInteger(seq))
+    return json({ error: 'invalid seq' }, 400, h);
+
+  if (!env.ACK_STORE) return json({ error: 'storage unavailable' }, 503, h);
+
+  const entry = {
+    seq,
+    fps: typeof fps === 'number' && fps > 0 && fps <= 30
+      ? Math.round(fps * 10) / 10
+      : null,
+    ts: Date.now(),
+  };
+
+  await env.ACK_STORE.put(`ack:${sid}`, JSON.stringify(entry), {
+    expirationTtl: ACK_TTL_S,
   });
 
-  return new Response(JSON.stringify({ ok: true }),
-    { status: 200, headers: { 'Content-Type': 'application/json', ...h } });
+  return json({ ok: true }, 200, h);
 }
