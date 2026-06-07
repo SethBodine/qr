@@ -116,8 +116,10 @@ function makeState() {
     rxStart: null, rxAssembled: new Set(),
     // ACK tracking (RX side)
     rxDecodedCount: 0,      // total frames decoded this session
+    rxAcksSent: 0,          // number of ACK POSTs sent
     rxCalFrameTimes: [],    // timestamps of decoded CAL frames for fps measurement
     rxLastAckedSeq: -1,
+    rxLastMeasuredFps: null,
   };
 }
 
@@ -259,6 +261,50 @@ async function runCalibration() {
   updateSummary();
 }
 
+// ─── Wait-phase CAL stream ────────────────────────────────────────────────────
+// While waiting for the receiver to join we stream CAL frames at the locally
+// calibrated fps so the receiver can measure its actual decode rate.  The join
+// QR (a normal link QR) is interspersed every CAL_WAIT_JOIN_EVERY frames so
+// the receiver can still scan the join URL.
+const CAL_WAIT_JOIN_EVERY = 6;   // show join QR once every N CAL frames
+let _waitCalTimer   = null;
+let _waitCalSeq     = 0;
+let _waitCalJoinCtr = 0;
+let _waitCalRunning = false;
+
+function startWaitCalStream() {
+  if (_waitCalRunning) return;
+  _waitCalRunning = true;
+  _waitCalSeq     = 0;
+  _waitCalJoinCtr = 0;
+  scheduleWaitCal();
+}
+
+function stopWaitCalStream() {
+  _waitCalRunning = false;
+  clearTimeout(_waitCalTimer);
+  // Re-render the join QR so it is shown cleanly while the data transfer starts
+  showJoinQR();
+}
+
+async function scheduleWaitCal() {
+  if (!_waitCalRunning) return;
+  _waitCalJoinCtr++;
+  if (_waitCalJoinCtr >= CAL_WAIT_JOIN_EVERY) {
+    _waitCalJoinCtr = 0;
+    // Show the join QR briefly so the receiver can scan in
+    const joinUrl = `${location.origin}${location.pathname}?sid=${S.sessionId}`;
+    renderJoinQR(joinUrl);
+  } else {
+    const sz      = CAL_SIZES[_waitCalSeq % CAL_SIZES.length];
+    const safeSz  = Math.min(sz, QR_MAX_CHUNK_BYTES);
+    const payload = JSON.stringify({ t:'C', seq: _waitCalSeq, sz: safeSz, d: randomB64(safeSz) });
+    _waitCalSeq++;
+    await renderQR(payload);
+  }
+  _waitCalTimer = setTimeout(scheduleWaitCal, 1000 / Math.max(2, S.txFps));
+}
+
 // ─── Transmission ──────────────────────────────────────────────────────────────
 async function startTransmission() {
   if (S.txActive || S.files.length === 0) return;
@@ -288,16 +334,16 @@ async function startTransmission() {
   renderChecksums();
   logToDiscord('send');
 
-  // Show join QR again so receiver can still scan in
+  // Stream CAL frames during wait so receiver can measure decode fps.
+  // The join URL is shown as text alongside the CAL QR stream.
   showJoinQR();
   setTxBadge('Waiting for receiver…', 'warn');
   el('txCtrlCard').style.display = 'block';
 
-  // Wait for first receiver ACK before streaming data.
-  // Poll /api/ack; begin transfer once we see a seq response.
-  // After FIRST_ACK_GRACE_MS with no ACK, show a skip option.
   startAckPolling();
+  startWaitCalStream();
   await waitForFirstAck();
+  stopWaitCalStream();
   scheduleFrame();
 }
 
@@ -315,7 +361,8 @@ async function waitForFirstAck() {
   // Show "waiting" state with a skip button the user can tap if receiver is
   // already scanning (e.g. laptop→laptop where user can see both screens)
   el('skipWaitBtn').style.display = 'inline-flex';
-  setTxBadge('Waiting for receiver…', 'warn');
+  setTxBadge('Waiting for receiver\u2026', 'warn');
+  let graceExpired = false;
 
   const start = Date.now();
   while (!S.txAckReceived) {
@@ -326,12 +373,26 @@ async function waitForFirstAck() {
     if (elapsed < FIRST_ACK_GRACE_MS) {
       setTxBadge(`Waiting for receiver… ${remaining}s`, 'warn');
     } else {
-      // Grace period expired — pause and keep waiting indefinitely
-      // but now show a more prominent message
-      setTxBadge('No receiver found — scan the QR to join', 'danger');
+      if (!graceExpired) {
+        graceExpired = true;
+        setTxBadge('No receiver found — scan the QR to join', 'danger');
+      }
     }
   }
   el('skipWaitBtn').style.display = 'none';
+
+  // If receiver joined after grace expired, re-run calibration so the fps
+  // negotiation happens fresh (the sender was idle during the long wait).
+  if (graceExpired && !S.calRunning) {
+    setTxBadge('Calibrating for receiver…', 'warn');
+    S.calRunning = false;
+    await runCalibration();
+    S.txFps        = parseInt(el('fpsSlider').value) || 4;
+    S.txChunkBytes = getChunkBytes();
+    S.txFrames     = await buildFrames();
+    el('statChunks').textContent = S.txFrames.length.toLocaleString();
+  }
+
   setTxBadge('Receiver joined — starting', 'success');
   await sleep(600); // brief visual confirmation
 }
@@ -466,9 +527,23 @@ function togglePause() {
 function stopTx() {
   clearTimeout(S.txTimer);
   stopAckPolling();
-  S.txActive = false;
-  el('txCtrlCard').style.display = 'none';
-  el('btnPause').textContent = '⏸ Pause';
+
+  // Preserve UI-level settings the user may have tuned, then reset transfer state
+  const prevFiles = S.files;
+  const prevTotal = S.totalBytes;
+
+  S = makeState();          // fresh session ID + clean slate
+  S.files      = prevFiles; // keep the file list so user doesn't have to re-add
+  S.totalBytes = prevTotal;
+
+  // Reset UI
+  el('txCtrlCard').style.display    = 'none';
+  el('txProgressWrap').style.display = 'none';
+  el('checksumPanel').style.display  = 'none';
+  el('calibResult').style.display    = 'none';
+  el('btnPause').textContent         = '⏸ Pause';
+  el('btnStart').disabled            = S.files.length === 0;
+  advanceStep(S.files.length > 0 ? 2 : 1);
   showJoinQR();
 }
 
@@ -607,6 +682,15 @@ async function startCamera() {
   el('rxBadge').textContent = 'Scanning';
   el('rxBadge').className   = 'badge badge-info';
 
+  // Show session ID in diagnostics immediately if we arrived via join URL
+  if (S.rxExpectedSid) {
+    const dw = el('rxDiagWrap');
+    if (dw) {
+      dw.style.display = 'block';
+      el('rxDiagSid').textContent = S.rxExpectedSid;
+    }
+  }
+
   const devices = await navigator.mediaDevices.enumerateDevices();
   if (devices.filter(d => d.kind === 'videoinput').length > 1)
     el('btnSwitchCam').style.display = 'inline-flex';
@@ -706,10 +790,12 @@ function onCalFrame(f) {
   if (medGap <= 0) return;
 
   const measuredFps = Math.round(1000 / medGap * 10) / 10;
+  S.rxLastMeasuredFps = measuredFps;
 
   // POST fps ACK to /api/ack so sender can adapt
-  postAck(S.rxExpectedSid || '', -1, measuredFps);
+  postAck(S.rxExpectedSid || S.rxHeader?.sid || '', -1, measuredFps);
   setRxStatus(`📡 Calibrating… ${measuredFps} fps measured`, 'info');
+  updateRxDiag();
 }
 
 // ─── ACK sender (receiver side) ───────────────────────────────────────────────
@@ -717,12 +803,26 @@ function postAck(sid, seq, fps) {
   if (!sid) return;
   const body = { sid, seq };
   if (fps != null) body.fps = fps;
+  S.rxAcksSent++;
+  updateRxDiag();
   fetch('/api/ack', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     keepalive: true,
   }).catch(() => {});
+}
+
+function updateRxDiag() {
+  const dw = el('rxDiagWrap');
+  if (!dw) return;
+  dw.style.display = 'block';
+  const fps = S.rxLastMeasuredFps;
+  el('rxDiagFps').textContent    = fps != null ? fps.toFixed(1) + ' fps' : '—';
+  el('rxDiagFrames').textContent = S.rxDecodedCount;
+  el('rxDiagAcks').textContent   = S.rxAcksSent;
+  const sid = S.rxExpectedSid || S.rxHeader?.sid || '—';
+  el('rxDiagSid').textContent    = sid;
 }
 
 function onHeader(f) {
@@ -780,6 +880,7 @@ function onChunk(f) {
   }
 
   updateRxProgress();
+  updateRxDiag();
   tryAssemble();
 }
 

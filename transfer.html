@@ -420,6 +420,14 @@
 
           <div id="rxStatusWrap" style="display:none;margin-top:12px">
             <div class="alert alert-info" id="rxStatusAlert">Waiting for QR stream…</div>
+            <div id="rxDiagWrap" style="display:none;margin-top:8px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);font-size:0.75rem;font-family:var(--font-mono);color:var(--text-muted)">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px">
+                <span>Measured fps</span><span id="rxDiagFps" style="color:var(--text)">-</span>
+                <span>Frames decoded</span><span id="rxDiagFrames" style="color:var(--text)">0</span>
+                <span>ACKs sent</span><span id="rxDiagAcks" style="color:var(--text)">0</span>
+                <span>Session ID</span><span id="rxDiagSid" style="color:var(--accent)">-</span>
+              </div>
+            </div>
           </div>
         </div>
 
