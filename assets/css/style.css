@@ -263,6 +263,7 @@ body {
 /* ─── TABS ─────────────────────────────────────────────────────────────────── */
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 16px;
@@ -272,7 +273,7 @@ body {
 }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
-  padding: 8px 12px;
+  padding: 8px 10px;
   font-size: 0.78rem;
   color: var(--text-muted);
   cursor: pointer;
@@ -396,27 +397,30 @@ input[type="checkbox"] {
 .toggle-label:hover { color: var(--text); }
 
 /* ─── STYLE GRID ───────────────────────────────────────────────────────────── */
-.style-grid   { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; }
-.style-grid-4 { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; }
+.style-grid   { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
+.style-grid-4 { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
 .style-option { display: none; }
 .style-label {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 10px 6px;
+  gap: 4px;
+  padding: 8px 4px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   cursor: pointer;
   transition: all 0.2s;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
   text-align: center;
   line-height: 1.2;
   -webkit-tap-highlight-color: transparent;
+  overflow: hidden;
+  word-break: break-word;
+  min-width: 0;
 }
-.style-label svg { opacity: 0.6; }
+.style-label svg { opacity: 0.6; width: 26px; height: 26px; flex-shrink: 0; }
 .style-label:hover { border-color: var(--border-bright); color: var(--text); }
 .style-label:hover svg { opacity: 1; }
 .style-option:checked + .style-label {
@@ -441,25 +445,28 @@ input[type="checkbox"] {
 .gradient-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
 /* ─── PRESET THEMES ────────────────────────────────────────────────────────── */
-.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; }
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
 .theme-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 10px 6px;
+  gap: 4px;
+  padding: 8px 4px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
   transition: all 0.2s;
   font-family: var(--font-mono);
   -webkit-tap-highlight-color: transparent;
+  overflow: hidden;
+  word-break: break-word;
+  min-width: 0;
 }
 .theme-btn:hover { border-color: var(--border-bright); color: var(--text); }
-.theme-swatch { width: 32px; height: 32px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); }
+.theme-swatch { width: 28px; height: 28px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.1); flex-shrink: 0; }
 [data-theme="dark"] .theme-swatch { border-color: rgba(255,255,255,0.1); }
 
 /* ─── BUTTONS ──────────────────────────────────────────────────────────────── */
@@ -814,6 +821,10 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; 
   .btn-sm { padding: 10px 14px; }
   .drop-zone { padding: 22px 14px; }
   .gradient-row { grid-template-columns: 1fr; }
+  /* Collapse 2-col grids earlier so form fields don't get squished */
+  .grid-2, .grid-2-lg { grid-template-columns: 1fr; }
+  /* Tabs wrap more tightly */
+  .tab { padding: 7px 9px; font-size: 0.74rem; }
 }
 
 /* Very small (≤ 380px) */
@@ -821,6 +832,12 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; 
   .section-header h1 { font-size: 1.35rem; }
   .stats { gap: 10px; }
   .stat-value { font-size: 1.2rem; }
+  .tab { padding: 5px 7px; font-size: 0.66rem; letter-spacing: 0.02em; }
+  .card { padding: 12px; }
+  .style-label { padding: 5px 2px; font-size: 0.60rem; }
+  .style-label svg { width: 20px; height: 20px; }
+  .theme-btn { padding: 5px 2px; font-size: 0.60rem; }
+  .theme-swatch { width: 20px; height: 20px; }
 }
 
 /* ─── PRINT ────────────────────────────────────────────────────────────────── */
@@ -853,13 +870,16 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; 
   .grid-2-lg { grid-template-columns: 1fr; }
   .grid-3    { grid-template-columns: 1fr 1fr; }
 
-  /* Style picker grids tighten on very small screens */
-  .style-label  { padding: 8px 4px; font-size: 0.68rem; }
-  .style-label svg { width: 26px; height: 26px; }
+  /* Style picker — even tighter on very small screens */
+  .style-label  { padding: 6px 3px; font-size: 0.62rem; }
+  .style-label svg { width: 22px; height: 22px; }
 
-  /* Theme swatches tighter */
-  .theme-btn  { padding: 8px 4px; font-size: 0.68rem; }
-  .theme-swatch { width: 26px; height: 26px; }
+  /* Theme swatches — tighter */
+  .theme-btn  { padding: 6px 3px; font-size: 0.62rem; }
+  .theme-swatch { width: 22px; height: 22px; }
+
+  /* Tabs — smaller text so more fit per row */
+  .tab { padding: 6px 8px; font-size: 0.70rem; }
 
   /* Gradient rows always stack */
   .gradient-row { grid-template-columns: 1fr; }
