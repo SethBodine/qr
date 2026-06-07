@@ -70,6 +70,7 @@ body {
   line-height: 1.6;
   min-height: 100vh;
   transition: background 0.25s, color 0.25s;
+  overflow-x: hidden; /* prevent any child from widening the page */
 }
 
 [data-theme="dark"] body {
@@ -213,14 +214,14 @@ body {
 .nav-drawer a:hover, .nav-drawer a.active { color: var(--accent); background: var(--accent-dim); }
 
 /* ─── LAYOUT ───────────────────────────────────────────────────────────────── */
-.main { max-width: 1280px; margin: 0 auto; padding: 32px 24px; }
+.main { max-width: 1280px; margin: 0 auto; padding: 32px 24px; overflow: hidden; }
 .grid-main {
   display: grid;
   grid-template-columns: 1fr 420px;
   gap: 24px;
   align-items: start;
 }
-.left-col  { display: flex; flex-direction: column; gap: 16px; }
+.left-col  { display: flex; flex-direction: column; gap: 16px; min-width: 0; overflow: hidden; }
 .right-col {
   position: sticky;
   top: 72px;
@@ -237,6 +238,8 @@ body {
   padding: 24px;
   transition: border-color 0.2s, box-shadow 0.2s;
   box-shadow: var(--shadow);
+  overflow: hidden; /* clip any child wider than the card */
+  min-width: 0;
 }
 .card:hover { border-color: var(--border-bright); }
 .card.glow  { box-shadow: var(--glow), var(--shadow); border-color: rgba(0,196,160,0.3); }
@@ -270,6 +273,8 @@ body {
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+  width: 100%;
+  box-sizing: border-box;
 }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
