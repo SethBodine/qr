@@ -33,12 +33,15 @@
 **14 content types:** URL, Text, Wi-Fi, vCard, Email, Phone, SMS, Location, Event, WhatsApp, Telegram, Bitcoin, PayPal, App Store.
 
 ### 📡 QR File Transfer
-- Stream files device-to-device using QR codes — no cloud, no server storage, no apps to install
-- Auto-calibration measures render throughput and picks the largest safe chunk size for your device
+- **Fountain-coded (LT/Luby transform)** — the receiver rebuilds the file from *any* ~k×1.15 distinct frames in *any* order. Dropped or blurred frames cost a little time, never correctness, and there's no rewind/resync logic because there's nothing to resync.
+- **Two link modes:**
+  - **Airgap** — zero network calls on either device. The sender starts streaming immediately (no handshake to wait on); the receiver locks onto the stream the instant its camera sees one valid frame. Built for a genuinely air-gapped laptop pair with no network path between them, or to either device.
+  - **Networked** — adds a join-link QR and a one-way receiver→sender progress/fps readout via the existing `/api/ack` relay. That relay is purely advisory: losing it degrades the on-screen progress readout, never the transfer itself.
+- Local-only calibration: measures *this device's own* render throughput using the exact same render path live transmission uses, so the numbers it reports are the numbers you get. Never waits on the network or the receiver.
 - pako/deflate compression for text-based files
 - SHA-256 integrity verified on receiver before any download link is shown
-- Up to **100 files · 1 GB total** per session
-- **Discord logging** of transfer metadata (filename, size, SHA-256, IPs) via Cloudflare secret
+- Up to **100 files** per session, **~60 MB total** in one optical stream (see [Protocol Specification](#protocol-specification) for why)
+- **Discord logging** of transfer metadata (filename, size, SHA-256, IPs) via Cloudflare secret, networked mode only
 
 ---
 
@@ -46,21 +49,21 @@
 
 ### Sending
 1. Open **File Transfer** on the sending device
-2. Drag and drop files (or click to browse) — up to 100 files, 1 GB total
-3. Click **⚡ Calibrate** — the tool displays test frames and measures how fast your screen can render them; this takes about 5 seconds and only needs to be done once per device
-4. Click **▶ Start** — QR frames begin cycling automatically
-5. Keep the screen visible and steady; do not lock the screen
+2. Pick **Link Mode**: *Airgap* for a no-network laptop-to-laptop transfer, *Networked* for phones/normal Wi-Fi (adds a join link + progress readout)
+3. Drag and drop files (or click to browse) — up to 100 files
+4. Click **▶ Send** — the tool briefly calibrates its own render speed, packs your files, then starts an endless fountain-coded QR stream
+5. Keep the screen visible and steady; do not lock the screen. There's no "done" state to wait for on the sender — stop manually once the receiver has the file (Networked mode shows a "Receiver complete ✓" badge when it hears back)
 
 ### Receiving
-1. Open **File Transfer** on the receiving device and click **Start Camera**
-2. Point the camera at the sender's screen — scanning begins immediately
-3. A progress bar tracks how many frames have been captured
-4. When all frames are received, SHA-256 checksums are verified automatically
+1. Open **File Transfer** on the receiving device and click **Start Camera** (or scan the sender's join-link QR in Networked mode, which does this for you)
+2. Point the camera at the sender's screen — decoding begins the moment one valid frame is seen, from anywhere in the stream
+3. A progress bar estimates completion from unique frames collected vs. the fountain code's expected overhead
+4. Once enough blocks are collected, SHA-256 checksums are verified automatically per file
 5. A **↓ Save** link appears for each file — tap to download to your device
 
 **Tips:**
-- Use calibration in the actual lighting conditions you'll be transferring in
-- If scanning stalls, reduce the chunk size preset on the sender (Small → Medium → Large → XL)
+- If scanning stalls, reduce the chunk size preset on the sender (Small → Medium → Large → XL) — smaller frames decode more reliably in poor lighting at the cost of needing more of them
+- Filenames only appear once the transfer is nearly complete — the file directory is fountain-coded along with the data, so (like the [decimen](https://github.com/bashalarmistalt/decimen-optical-transfer) project this protocol is adapted from) there's no separate "header" frame to reveal them early. The incoming size and block count ARE shown from the very first frame.
 - Files stay entirely in browser memory — nothing is uploaded anywhere
 
 ---
@@ -133,49 +136,137 @@ Push to `main` — CI handles the rest. Pull requests automatically get a previe
 
 ## Protocol Specification
 
-### Frame types
+**v4 rewrite (fountain-coded).** File Transfer used to send a strict sequence
+of `{fileIndex, chunkIndex}` chunks and lean on the receiver's ACK to tell the
+sender where to rewind to after a pause — workable on a phone with a steady
+connection, fragile everywhere else, and outright unusable on a laptop pair
+with no network path between them at all. v4 ports the core protocol from
+[bashalarmistalt/decimen-optical-transfer](https://github.com/bashalarmistalt/decimen-optical-transfer)
+(MIT, Evan Crawley) — an LT (Luby transform) fountain code — and adds a
+multi-file container and two selectable link modes on top of it. Full credit
+for the fountain-coding design and the original writeup: see that project's
+[docs/technical/protocol.md](https://github.com/bashalarmistalt/decimen-optical-transfer/blob/main/docs/technical/protocol.md).
+
+### Why fountain coding
+
+A screen-to-camera link has no back-channel: frames get missed to blur,
+autofocus hunting, and refresh-cycle straddling. The old protocol looped a
+fixed frame sequence and depended on the receiver telling the sender where it
+got stuck. Two failure modes fell out of that:
+
+- **The rewind math broke on large transfers.** The global sequence number
+  was a `uint16` (wraps at 65,536); the rewind logic searched for the first
+  un-acked frame by comparing wrapped sequence numbers, which is ambiguous
+  once a transfer has looped past 65,536 chunks. Large transfers could
+  silently resume at the wrong offset.
+- **Starting at all required a network round trip.** The sender wouldn't
+  leave "waiting for receiver" until it heard back from `/api/ack` — a
+  non-starter for two air-gapped laptops with no route to that endpoint.
+
+Fountain coding removes both problems by construction. The sender emits an
+endless stream of frames; frame `seq` XORs together a pseudorandom subset of
+the file's blocks (subset size drawn from a robust-soliton distribution, subset
+membership derived deterministically from `seq`). The receiver reconstructs
+the file from **any** ~k×1.15 distinct frames, in **any** order — a dropped
+frame costs a little time, never correctness, and pausing/resuming is just
+"stop and later keep counting from the same `seq`." No rewind, because
+there's nothing to rewind to.
+
+### Wire format
+
+Each QR encodes `base64url( 20-byte header || fountain block )`:
 
 ```
-HDR  { t:'H', sid, v:1, files:[{i,n,s,h,tc,z}], total }
-DAT  { t:'D', s, fi, ci, d }     ← s=global uint16 seq, d=base64url chunk
-END  { t:'E', sid, total }
-CAL  { t:'C', seq, sz, d }       ← calibration probe frame
+offset  size  field         notes
+0       u8    magic 0xD1
+1       u8    magic 0x0C
+2       u16   sessionId     random per Send click
+4       u32   seq           drives the fountain PRNG — monotonic, never resets
+8       u16   k             source block count
+10      u16   blockLen      payload bytes per frame
+12      u32   totalLen      length of the packed container
+16      u32   payloadFnv    FNV-1a of the whole container
 ```
 
-### Transfer flow
+Every field a decoder needs to keep accepting frames — everything but `seq` —
+is present on **every single frame**. There is no separate header frame and
+no repeat-N-times handshake: a receiver that starts scanning mid-stream locks
+on from the very next frame it sees.
+
+### Container (multi-file)
+
+The bytes fountain-coded inside the frames are QRForge's own directory format
+— a small extension of decimen's single-file container to carry up to 100
+files as one LT stream:
+
 ```
-Sender:  [HDR×5] [DAT×N...] [END×5]  → loops continuously
-Receiver: deduplicates by (fi,ci) → reassembles → SHA-256 → download
+MAGIC "QRF2"                         4 bytes
+fileCount                            u16
+per file:
+  nameLen u16, name (utf8)
+  typeLen u16, type (utf8)
+  compressed u8
+  originalSize u32, transmittedSize u32
+  sha256                             32 bytes
+blob: concatenated transmitted bytes, one file after another
 ```
 
-### ACK / calibration handshake
+Because the directory is fountain-coded along with the data, filenames aren't
+known until the stream is nearly fully decoded (same tradeoff decimen makes
+for its single file). `totalLen`/`k`/`blockLen` ride on every frame, though,
+so the receiver can show "~230 KB incoming" from frame one.
 
-```
-Receiver  ──POST /api/ack { sid, seq:-1, fps }──▶  Cloudflare Function
-Sender    ──GET  /api/ack?sid=xxx              ──▶  { seq, fps, ts }
-```
+### Link modes
 
-1. Sender streams **CAL frames** (42 total: 7 sizes × 6 frames each) while waiting for receiver
-2. Receiver decodes CAL frames, measures inter-frame interval, derives its actual decode fps
-3. Receiver POSTs `{ sid, seq:-1, fps }` to `/api/ack`
-4. Sender polls `/api/ack` every 1.5 s; on first fps response it sets `txFps = min(senderMax, rxFps × 0.9)` and begins transfer
-5. Receiver ACKs every 10 decoded data frames: POST `{ sid, seq }`
-6. Sender pauses after 6 s with no ACK; on resume it rewinds `txIndex` to the frame immediately after the last ACKed seq so the receiver fills any gap on the next loop pass
+| | Airgap | Networked |
+|---|---|---|
+| Network calls | None, either device | `/api/ack` (progress only), `/api/log` (Discord) |
+| Start condition | Immediate | Immediate — join link is a courtesy, not a gate |
+| Join link/QR | None | Yes |
+| If the network drops | N/A | Progress readout goes stale; transfer is unaffected |
 
-Sequence numbers are uint16 (wrap at 65535). The sender uses half-range comparison (`seqGt`) so wrap-around does not cause a deadlock.
-
-The `/api/ack` endpoint is a stateless Cloudflare Pages Function with an in-memory Map (60 s TTL per session). No database, no KV — if the Worker isolate is recycled mid-session the receiver's next ACK repopulates the store and the sender resumes automatically.
+`/api/ack` accepts `{ sid, seq, fps }` from the receiver — `seq` here is the
+fountain decoder's count of unique frames seen (or `0xFFFFFF` as a "receiver
+complete" sentinel), purely to drive the sender's on-screen "Receiver ~62%"
+readout. The sender never blocks on it and never rewinds because of it. The
+endpoint is unchanged from before: a stateless Cloudflare Pages Function
+backed by an in-memory Map with a 60 s TTL per session.
 
 ### Chunk sizes (error correction H)
-| Preset | Bytes/frame | Typical use |
+| Preset | Block bytes | Typical use |
 |---|---|---|
 | Small  | 80  | Very slow cameras, high interference |
 | Medium | 220 | Default / calibrated safe minimum |
 | Large  | 460 | Good lighting, steady hands |
 | XL     | 820 | Ideal conditions, tripod |
 
+Error correction stays fixed at **H** (30% codeword redundancy) rather than
+dropping to L the way decimen does — decimen decodes with a dedicated
+zxing-wasm worker reading raw pixels off the canvas; this app decodes with
+the browser's native `BarcodeDetector`, which has less headroom on marginal
+phone cameras, so the extra in-frame ECC is kept as a safety margin.
+
 ### Calibration
-Displays **42 test frames** (7 chunk sizes × 6 frames per size) at a fixed 8 fps target. Uses double-`requestAnimationFrame` to measure actual GPU composite time, not just JS submission time (critical on mobile where canvas renders asynchronously). Picks the largest chunk size whose median render time is ≤ 160 ms, backs off 20%, caps at 15 fps. The receiver's measured decode rate from the ACK handshake may further reduce sender fps. Error correction is fixed at H throughout.
+
+Renders **42 test frames** (7 sizes × 6 frames each) through the *exact same*
+render path a live transfer uses — `new QRCode(...)` followed by a
+double-`requestAnimationFrame`, which confirms an actual GPU composite rather
+than a fixed `setTimeout` guess. (The old calibration used double-rAF too, but
+live transmission paced itself with `setTimeout` and a hardcoded 30ms "paint
+delay" — the two paths measured different things, so a calibration result
+didn't necessarily describe what a real transfer would do. Sharing one
+render function fixes that.) Calibration only measures this device's own
+render throughput; it never waits on the receiver or the network, in either
+link mode.
+
+### Practical size ceiling
+
+`k` (source block count) is a `u16` on the wire — max 65,535 blocks. At the
+largest chunk size that fits a version-40-H QR through this app's base64url
+text encoding (~934 bytes), that puts the real ceiling around **61 MB per
+transfer**, not the old flat "1 GB" claim. `Send` validates this up front —
+same idea as decimen's `frame-capacity.ts` — and tells you which chunk-size
+preset would fit, instead of failing partway through a multi-hour transfer.
 
 ---
 
@@ -188,6 +279,13 @@ Displays **42 test frames** (7 chunk sizes × 6 frames per size) at a fixed 8 fp
 | [pako](https://github.com/nodeca/pako) | 2.1.0 | File Transfer | zlib/deflate compression of text-based file chunks |
 
 All three are loaded from jsDelivr CDN with **Subresource Integrity (SRI)** hashes — browsers will refuse to execute them if the CDN serves tampered files.
+
+The fountain-coding protocol in `assets/js/transfer.js` (LT encoder/decoder,
+frame header, capacity math, progress estimation) is ported from
+[bashalarmistalt/decimen-optical-transfer](https://github.com/bashalarmistalt/decimen-optical-transfer)
+by Evan Crawley, MIT licensed. No code or package from that repo is imported
+at runtime — it's a from-scratch JS port of the relevant `shared/*.ts` files,
+credited inline in the source comments.
 
 ### Cloudflare Pages Functions
 

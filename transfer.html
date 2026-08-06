@@ -258,7 +258,7 @@
             ondrop="event.preventDefault();this.classList.remove('drag-over');handleFiles(event.dataTransfer.files)">
             <div class="drop-zone-icon">📁</div>
             <h3>Drop files here or tap to browse</h3>
-            <p>Up to 100 files · 1 GB total · nothing leaves your device</p>
+            <p>Up to 100 files · ~60 MB total in one optical stream · nothing leaves your device</p>
             <input type="file" id="fileInput" multiple style="display:none" onchange="handleFiles(this.files)"/>
           </div>
           <div id="fileList" class="file-list" style="margin-top:10px"></div>
@@ -270,6 +270,15 @@
               <div class="stat"><div class="stat-value" id="statETA">—</div><div class="stat-label">Est.</div></div>
             </div>
           </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="dot"></span>Link Mode</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-ghost" id="btnLinkNetworked" onclick="setLinkMode('networked')">📶 Networked</button>
+            <button class="btn btn-sm btn-ghost" id="btnLinkAirgap" onclick="setLinkMode('airgap')">🔒 Airgap</button>
+          </div>
+          <p id="linkModeHint" style="font-size:0.78rem;color:var(--text-muted);margin-top:8px"></p>
         </div>
 
         <div class="card">
@@ -300,7 +309,7 @@
             </select>
           </div>
           <div class="alert alert-info" style="font-size:0.82rem;margin-top:10px">
-            💡 Calibration runs automatically on Send. Speed adapts to your receiver via HTTPS ACK.
+            💡 Fountain-coded — the receiver rebuilds the file from any ~15% extra frames, in any order, so calibration only measures <em>this</em> device's own render speed. Nothing has to hear back from the receiver before streaming starts.
           </div>
           <div style="margin-top:14px">
             <button class="btn btn-primary btn-full" id="btnStart" onclick="startTransmission()" disabled>▶ Send</button>
@@ -369,12 +378,6 @@
 
         <div id="txCtrlCard" style="display:none" class="card">
           <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="btn btn-secondary btn-full" id="skipWaitBtn"
-              onclick="skipWait()"
-              style="display:none"
-              title="Skip waiting and start streaming — use this if your receiver is already watching the screen">
-              ▶ Receiver is ready — start now
-            </button>
             <button class="btn btn-secondary btn-full" id="btnPause" onclick="togglePause()">⏸ Pause</button>
             <button class="btn btn-danger btn-full" onclick="stopTx()">✕ Cancel</button>
           </div>

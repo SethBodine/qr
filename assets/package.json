@@ -1,0 +1,11 @@
+{
+  "name": "qrforge-transfer-tests",
+  "private": true,
+  "description": "Standalone protocol tests for assets/js/transfer.js — not part of the deployed site or its build.",
+  "scripts": {
+    "test": "node fountain-roundtrip.test.js && node container-integration.test.js"
+  },
+  "devDependencies": {
+    "pako": "^2.1.0"
+  }
+}
