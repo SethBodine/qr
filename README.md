@@ -34,14 +34,13 @@
 
 ### 📡 QR File Transfer
 - **Fountain-coded (LT/Luby transform)** — the receiver rebuilds the file from *any* ~k×1.15 distinct frames in *any* order. Dropped or blurred frames cost a little time, never correctness, and there's no rewind/resync logic because there's nothing to resync.
-- **Two link modes:**
-  - **Airgap** — zero network calls on either device. The sender starts streaming immediately (no handshake to wait on); the receiver locks onto the stream the instant its camera sees one valid frame. Built for a genuinely air-gapped laptop pair with no network path between them, or to either device.
-  - **Networked** — adds a join-link QR and a one-way receiver→sender progress/fps readout via the existing `/api/ack` relay. That relay is purely advisory: losing it degrades the on-screen progress readout, never the transfer itself.
+- **No backend involved in the transfer itself** — sender and receiver never call any server. Everything travels as light: the sender streams QR frames, the receiver's camera decodes them straight off the screen. Works identically whether the two devices are next to each other, across a room, online, or fully air-gapped.
+- A join-link QR is shown as a convenience (it opens the receiver straight into Receive mode) — it's a plain client-side URL, nothing is posted anywhere to create or use it.
 - Local-only calibration: measures *this device's own* render throughput using the exact same render path live transmission uses, so the numbers it reports are the numbers you get. Never waits on the network or the receiver.
 - pako/deflate compression for text-based files
 - SHA-256 integrity verified on receiver before any download link is shown
 - Up to **100 files** per session, **~60 MB total** in one optical stream (see [Protocol Specification](#protocol-specification) for why)
-- **Discord logging** of transfer metadata (filename, size, SHA-256, IPs) via Cloudflare secret, networked mode only
+- **Discord logging** of transfer metadata (filename, size, SHA-256, IPs) via Cloudflare secret — an owner-side record, independent of the transfer itself
 
 ---
 
@@ -49,13 +48,12 @@
 
 ### Sending
 1. Open **File Transfer** on the sending device
-2. Pick **Link Mode**: *Airgap* for a no-network laptop-to-laptop transfer, *Networked* for phones/normal Wi-Fi (adds a join link + progress readout)
-3. Drag and drop files (or click to browse) — up to 100 files
-4. Click **▶ Send** — the tool briefly calibrates its own render speed, packs your files, then starts an endless fountain-coded QR stream
-5. Keep the screen visible and steady; do not lock the screen. There's no "done" state to wait for on the sender — stop manually once the receiver has the file (Networked mode shows a "Receiver complete ✓" badge when it hears back)
+2. Drag and drop files (or click to browse) — up to 100 files
+3. Click **▶ Send** — the tool briefly calibrates its own render speed, packs your files, then starts an endless fountain-coded QR stream
+4. Keep the screen visible and steady; do not lock the screen. There's no "done" state to wait for on the sender — stop manually once the receiver has the file
 
 ### Receiving
-1. Open **File Transfer** on the receiving device and click **Start Camera** (or scan the sender's join-link QR in Networked mode, which does this for you)
+1. Open **File Transfer** on the receiving device and click **Start Camera** (or scan the sender's join-link QR, which does this for you)
 2. Point the camera at the sender's screen — decoding begins the moment one valid frame is seen, from anywhere in the stream
 3. A progress bar estimates completion from unique frames collected vs. the fountain code's expected overhead
 4. Once enough blocks are collected, SHA-256 checksums are verified automatically per file
@@ -136,15 +134,24 @@ Push to `main` — CI handles the rest. Pull requests automatically get a previe
 
 ## Protocol Specification
 
-**v4 rewrite (fountain-coded).** File Transfer used to send a strict sequence
-of `{fileIndex, chunkIndex}` chunks and lean on the receiver's ACK to tell the
-sender where to rewind to after a pause — workable on a phone with a steady
+**v5 (fountain-coded, no backend).** File Transfer used to send a strict
+sequence of `{fileIndex, chunkIndex}` chunks and lean on the receiver's ACK,
+relayed through a Cloudflare Pages Function + KV store, to tell the sender
+where to rewind to after a pause — workable on a phone with a steady
 connection, fragile everywhere else, and outright unusable on a laptop pair
-with no network path between them at all. v4 ports the core protocol from
-[bashalarmistalt/decimen-optical-transfer](https://github.com/bashalarmistalt/decimen-optical-transfer)
-(MIT, Evan Crawley) — an LT (Luby transform) fountain code — and adds a
-multi-file container and two selectable link modes on top of it. Full credit
-for the fountain-coding design and the original writeup: see that project's
+with no network path between them at all. It also carried a "networked vs
+airgap" mode toggle that, in practice, never changed how the file itself
+moved — both modes always streamed the same optical QR sequence; the toggle
+only gated an advisory progress readout. That readout depended on
+infrastructure — a KV-backed relay — that's awkward to debug from a phone
+and had nothing to do with whether a QR code can be read off a screen, so
+it's gone. v5 ports the core protocol from
+[bashalarmistalt/decimen-optical-transfer](https://github.com/bashalarmistalt/decimen-optical-transfer)'s
+MIT-licensed v0.3.0 release (credit Evan Crawley; that project relicensed to
+AGPL at v0.4.0, so this port is taken from, and stays pinned to, the earlier
+MIT tag) — an LT (Luby transform) fountain code — and adds a multi-file
+container on top of it. Full credit for the fountain-coding design and the
+original writeup: see that project's
 [docs/technical/protocol.md](https://github.com/bashalarmistalt/decimen-optical-transfer/blob/main/docs/technical/protocol.md).
 
 ### Why fountain coding
@@ -160,8 +167,10 @@ got stuck. Two failure modes fell out of that:
   once a transfer has looped past 65,536 chunks. Large transfers could
   silently resume at the wrong offset.
 - **Starting at all required a network round trip.** The sender wouldn't
-  leave "waiting for receiver" until it heard back from `/api/ack` — a
-  non-starter for two air-gapped laptops with no route to that endpoint.
+  leave "waiting for receiver" until it heard back from a KV-backed ACK
+  relay — a non-starter for two air-gapped laptops with no route to that
+  endpoint, and a source of confusing stalls even on a normal connection
+  whenever the relay itself had a bad moment.
 
 Fountain coding removes both problems by construction. The sender emits an
 endless stream of frames; frame `seq` XORs together a pseudorandom subset of
@@ -216,21 +225,20 @@ known until the stream is nearly fully decoded (same tradeoff decimen makes
 for its single file). `totalLen`/`k`/`blockLen` ride on every frame, though,
 so the receiver can show "~230 KB incoming" from frame one.
 
-### Link modes
+### No backend in the transfer path
 
-| | Airgap | Networked |
-|---|---|---|
-| Network calls | None, either device | `/api/ack` (progress only), `/api/log` (Discord) |
-| Start condition | Immediate | Immediate — join link is a courtesy, not a gate |
-| Join link/QR | None | Yes |
-| If the network drops | N/A | Progress readout goes stale; transfer is unaffected |
+The sender streams QR frames and the receiver decodes them off the camera —
+that's the entire transfer, with no network call on either device, whether
+they're across a desk or across a room, online or fully air-gapped. A
+join-link QR is generated and read entirely client-side (`location.origin +
+pathname + ?sid=`) purely so the receiver doesn't have to manually switch to
+Receive mode; nothing is posted to produce or use it.
 
-`/api/ack` accepts `{ sid, seq, fps }` from the receiver — `seq` here is the
-fountain decoder's count of unique frames seen (or `0xFFFFFF` as a "receiver
-complete" sentinel), purely to drive the sender's on-screen "Receiver ~62%"
-readout. The sender never blocks on it and never rewinds because of it. The
-endpoint is unchanged from before: a stateless Cloudflare Pages Function
-backed by an in-memory Map with a 60 s TTL per session.
+The one server call left anywhere in File Transfer is `/api/log` — a
+one-way, fire-and-forget POST to a Discord webhook for the site owner's own
+record of transfers (filename, size, SHA-256, IP). It has no effect on
+whether a transfer succeeds; see the [API endpoints](#-api-endpoints) table
+below.
 
 ### Chunk sizes (error correction H)
 | Preset | Block bytes | Typical use |
@@ -256,8 +264,7 @@ live transmission paced itself with `setTimeout` and a hardcoded 30ms "paint
 delay" — the two paths measured different things, so a calibration result
 didn't necessarily describe what a real transfer would do. Sharing one
 render function fixes that.) Calibration only measures this device's own
-render throughput; it never waits on the receiver or the network, in either
-link mode.
+render throughput; it never waits on the receiver or the network.
 
 ### Practical size ceiling
 
@@ -291,11 +298,9 @@ credited inline in the source comments.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/log` | POST | Posts transfer metadata (filenames, sizes, SHA-256, IP, country) to a Discord webhook. Requires `DISCORD_WEBHOOK_URL` secret. |
-| `/api/ack` | POST | Receiver posts ACK `{ sid, seq, fps }` after decoding frames. Used for calibration handshake and pause/resume signalling. |
-| `/api/ack` | GET | Sender polls for latest receiver ACK. Returns `{ sid, seq, fps, ts }` or 404 if no ACK yet. |
+| `/api/log` | POST | Posts transfer metadata (filenames, sizes, SHA-256, IP, country) to a Discord webhook. Requires `DISCORD_WEBHOOK_URL` secret. Fire-and-forget — a failed or blocked request has no effect on the transfer itself. |
 
-Both functions read `ALLOWED_ORIGIN` from environment variables (set in `wrangler.toml` or Cloudflare dashboard). Cloudflare Pages preview URLs (`*.qrforge.pages.dev`) are always allowed for development.
+This is the only server-side endpoint File Transfer uses. It reads `ALLOWED_ORIGIN` from environment variables (set in `wrangler.toml` or Cloudflare dashboard). Cloudflare Pages preview URLs (`*.qrforge.pages.dev`) are always allowed for development.
 
 ---
 
@@ -317,8 +322,7 @@ Both functions read `ALLOWED_ORIGIN` from environment variables (set in `wrangle
 - **Camera permission** only requested when user actively clicks **Start Camera**; browser support checked first with a specific actionable message if `BarcodeDetector` is absent
 - **`form-action 'none'`** in CSP — no form submissions permitted
 - **`robots.txt`** blocks crawlers from `/api/` endpoints
-- **`/api/*` headers** set `Cache-Control: no-store, no-cache` to prevent any proxy caching of ACK or log responses
-- **`/api/ack`** validates `sid` format, bounds-checks `seq` and `fps`, caps sessions at 500, evicts entries after 60 s
+- **`/api/*` headers** set `Cache-Control: no-store, no-cache` to prevent any proxy caching of log responses
 - No cookies, no third-party analytics or tracking
 - URL click tracking is **opt-in only** and clearly labelled; a tooltip discloses what is collected before the user enables it
 

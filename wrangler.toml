@@ -12,7 +12,7 @@ ALLOWED_ORIGIN = "https://qr.insecure.co.nz"
 
 # Secrets — set via CLI, never committed:
 #   wrangler secret put DISCORD_WEBHOOK_URL
-
-[[kv_namespaces]]
-binding = "ACK_STORE"
-id = "c503d083a2d047d7a57b5dce70856190"
+#
+# No KV namespace is needed. The transfer itself is fountain-coded and
+# device-to-device (screen to camera) — the only backend call left is
+# /api/log, a one-way Discord notification, unrelated to correctness.

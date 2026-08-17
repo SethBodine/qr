@@ -731,10 +731,8 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; 
 .mode-toggle { display: flex; gap: 10px; margin-bottom: 20px; }
 .mode-toggle .btn { flex: 1; }
 
-.progress-dual      { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+
 .progress-label     { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); }
-.progress-bar-ack   { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
-.progress-fill-ack  { height: 100%; background: var(--accent-glow); border-radius: 2px; transition: width 0.5s; }
 
 #browserWarning     { display: none; margin-bottom: 16px; }
 #joinQrCaption      { display: none; margin-top: 12px; text-align: center; }

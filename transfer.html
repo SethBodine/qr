@@ -124,21 +124,12 @@
       .drop-zone h3 { font-size: 0.95rem; }
     }
 
-    /* ACK progress row */
-    .progress-dual {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-top: 10px;
-    }
     .progress-label {
       display: flex;
       justify-content: space-between;
       font-size: 0.72rem;
       color: var(--text-muted);
     }
-    .progress-bar-ack { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
-    .progress-fill-ack { height: 100%; background: rgba(0,245,200,0.45); border-radius: 2px; transition: width 0.5s; }
 
     /* Mode toggle — full width on mobile */
     .mode-toggle {
@@ -273,15 +264,6 @@
         </div>
 
         <div class="card">
-          <div class="card-title"><span class="dot"></span>Link Mode</div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-sm btn-ghost" id="btnLinkNetworked" onclick="setLinkMode('networked')">📶 Networked</button>
-            <button class="btn btn-sm btn-ghost" id="btnLinkAirgap" onclick="setLinkMode('airgap')">🔒 Airgap</button>
-          </div>
-          <p id="linkModeHint" style="font-size:0.78rem;color:var(--text-muted);margin-top:8px"></p>
-        </div>
-
-        <div class="card">
           <div class="card-title"><span class="dot"></span>Settings</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div class="field">
@@ -345,24 +327,12 @@
           </div>
 
           <div id="txProgressWrap" style="display:none;margin-top:14px">
-            <div class="progress-dual">
-              <div>
-                <div class="progress-label">
-                  <span class="mono" id="txFrameLabel">Frame 0 / 0</span>
-                  <span class="mono" id="txPct">0%</span>
-                </div>
-                <div class="progress-bar" style="margin-top:4px">
-                  <div class="progress-fill" id="txBar" style="width:0%"></div>
-                </div>
-              </div>
-              <div>
-                <div class="progress-label">
-                  <span>Receiver ACK</span>
-                </div>
-                <div class="progress-bar-ack">
-                  <div class="progress-fill-ack" id="txAckBar" style="width:0%"></div>
-                </div>
-              </div>
+            <div class="progress-label">
+              <span class="mono" id="txFrameLabel">Frame 0 / 0</span>
+              <span class="mono" id="txPct">0%</span>
+            </div>
+            <div class="progress-bar" style="margin-top:4px">
+              <div class="progress-fill" id="txBar" style="width:0%"></div>
             </div>
             <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.75rem;color:var(--text-muted)">
               <span id="txElapsed">0s elapsed</span>
@@ -440,7 +410,6 @@
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px">
                 <span>Measured fps</span><span id="rxDiagFps" style="color:var(--text)">-</span>
                 <span>Frames decoded</span><span id="rxDiagFrames" style="color:var(--text)">0</span>
-                <span>ACKs sent</span><span id="rxDiagAcks" style="color:var(--text)">0</span>
                 <span>Session ID</span><span id="rxDiagSid" style="color:var(--accent)">-</span>
               </div>
             </div>

@@ -1,65 +1,47 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// QRForge Transfer Engine v4 — fountain-coded
+// QRForge Transfer Engine v5 — fountain-coded, no backend
 //
-// This replaces the v3 sequential-chunk-with-server-rewind protocol with an LT
-// (Luby transform) fountain code, ported from bashalarmistalt/decimen-optical-
-// transfer (MIT) — https://github.com/bashalarmistalt/decimen-optical-transfer.
-// Credit: Evan Crawley. The math in FOUNTAIN CORE below (dlog/solitonCdf/
-// frameIndices/LTEncoder/LTDecoder, splitmix32, fnv1a, and the capacity/
-// progress formulas) is a line-for-line port of shared/fountain.ts,
-// shared/protocol.ts, shared/frame-capacity.ts and shared/progress.ts from
-// that project, translated from TypeScript to plain JS so it can keep living
-// in this repo's no-build static site. See docs/protocol.md in that repo for
-// the original design writeup.
+// Sends the file as an LT (Luby transform) fountain code, ported from
+// bashalarmistalt/decimen-optical-transfer's MIT-licensed v0.3.0 release
+// (https://github.com/bashalarmistalt/decimen-optical-transfer, credit Evan
+// Crawley — that project relicensed to AGPL at v0.4.0, so this port is taken
+// from, and stays pinned to, the earlier MIT tag). The math in FOUNTAIN CORE
+// below (dlog/solitonCdf/frameIndices/LTEncoder/LTDecoder, splitmix32, fnv1a,
+// and the capacity/progress formulas) is a line-for-line port of
+// shared/fountain.ts, shared/protocol.ts, shared/frame-capacity.ts and
+// shared/progress.ts from that project, translated from TypeScript to plain
+// JS so it can keep living in this repo's no-build static site.
 //
-// WHY THIS REWRITE
+// WHY THIS DESIGN
 // ─────────────────
-// v3 sent the file as a strict sequence of (fileIndex, chunkIndex) chunks and
-// depended on the receiver's ACK to tell the sender where to rewind to after a
-// pause. Two things made that fragile in practice:
+// An earlier version sent the file as a strict sequence of chunks and
+// depended on a server-relayed receiver ACK to tell the sender where to
+// rewind to after a pause, and to know a receiver was even present before
+// starting. That was fragile: rewinding on a wrapped sequence number could
+// resume at the wrong position, and starting a transfer meant waiting on a
+// round trip through a Cloudflare Pages Function + KV store — real
+// infrastructure, on the far side of a network call, that's awkward to
+// debug from a phone and has nothing to do with whether a QR code can be
+// read off a screen.
 //
-//   1. The rewind logic walked S.txFrames looking for the first frame whose
-//      global `s` (a uint16, wraps at 65536) was greater than the acked seq.
-//      For any transfer over ~65k chunks that comparison is ambiguous — many
-//      frames share the same wrapped `s` — so a rewind on a large transfer
-//      could silently resume at the wrong position.
-//   2. Starting a transfer at all required a round trip through the
-//      Cloudflare `/api/ack` relay before the sender would leave "waiting for
-//      receiver". That's fine on a phone with mobile data, but on a genuinely
-//      air-gapped laptop pair — the case this rewrite adds explicit support
-//      for — there is no network path to that relay at all, so the sender
-//      just sat in "Waiting for receiver…" until the 20s grace period, over
-//      and over, on every settings change.
-//   3. Live transmission's frame pacing used `setTimeout(fn, 1000/fps)` with
-//      a hardcoded 30ms "paint delay" in renderQR(), while calibration used
-//      double-`requestAnimationFrame` to actually confirm the frame had been
-//      composited. The two paths measure different things, so a calibration
-//      result didn't necessarily describe what the real transfer would do —
-//      most visible on mobile GPUs where canvas compositing is asynchronous.
-//
-// Fountain coding fixes (1) and (2) structurally: the receiver reconstructs
+// Fountain coding removes the need for any of that. The receiver reconstructs
 // the file from ANY ~k·1.15 distinct frames in ANY order, so there is no
-// rewind concept at all — pausing and resuming just means "stop and restart
-// the same monotonic seq counter". And because every frame is fully self-
-// describing (session id, k, block length, total length all live in a 20-byte
-// header on every frame), the sender never needs to hear from the receiver
-// before it starts, which is what makes a genuine no-network airgap mode
-// possible. (3) is fixed by giving calibration and live transmission the
-// exact same rAF-driven, double-rAF-confirmed render path.
+// rewind concept — pausing and resuming just means "stop and restart the
+// same monotonic seq counter". Every frame is fully self-describing (session
+// id, k, block length, total length all live in a 20-byte header on every
+// frame), so the sender never needs to hear from the receiver before it
+// starts, and the receiver never needs to hear from the sender before it
+// locks on. There is no backend involved in a transfer at all — everything
+// below runs as two browsers pointing a camera at a screen. The frame-pacing
+// path (calibration and live transmission share one rAF-driven,
+// double-rAF-confirmed renderer) matters for the same reason: mismatched
+// timing between the two was a source of "it just doesn't sync" symptoms
+// that had nothing to do with any network.
 //
-// TWO LINK MODES
-// ──────────────
-// Airgap    — no network calls at all, on either device. Sender starts
-//             streaming immediately; receiver locks onto the stream the
-//             moment its camera sees a valid frame, whenever that happens.
-//             No join link (there's nowhere to serve it from), no ACK, no
-//             Discord logging.
-// Networked — same optical stream, PLUS the existing /api/ack relay is used
-//             for a join-link QR and a one-way receiver→sender progress/fps
-//             readout. Crucially, ACK is now advisory only: losing it just
-//             means the sender's on-screen "receiver progress" readout goes
-//             stale, not that the transfer stalls. This is the mode phones
-//             on normal networks want.
+// A join-link QR is still offered as a convenience (it saves the receiver
+// from manually switching to Receive mode) but it's just a URL —
+// `location.origin + pathname + ?sid=`, generated and read entirely
+// client-side. Nothing is posted anywhere to produce or use it.
 //
 // WIRE FORMAT
 // ───────────
@@ -108,10 +90,6 @@ const QR_MAX_CHUNK_BYTES = QR_MAX_WIRE_BYTES - HEADER_LEN;     // largest legal 
 const CHUNK_PRESETS      = { s: 80, m: 220, l: 460, xl: 820 };
 const CHUNK_AUTO_DEFAULT = 220;
 const PRESET_LIST        = Object.values(CHUNK_PRESETS);
-
-// Networked-mode ACK (advisory only — see header comment)
-const ACK_POLL_MS   = 1500;
-const ACK_COMPLETE_SENTINEL = 0xFFFFFF; // largest seq /api/ack accepts; means "receiver is done"
 
 // Calibration — now runs the exact frame-render path live transmission uses.
 const CAL_SIZES           = [80, 150, 220, 360, 500, 680, 820];
@@ -526,48 +504,33 @@ let S = makeState();
 function makeState() {
   return {
     mode: 'send',
-    linkMode: (typeof navigator !== 'undefined' && navigator.onLine === false) ? 'airgap' : 'networked',
     // TX
     files: [], totalBytes: 0,
-    sessionIdStr: randomId(8),     // human/URL session id (networked join link, Discord logging)
+    sessionIdStr: randomId(8),     // human/URL session id, used only for the join-link QR
     txActive: false, txPaused: false,
     txEncoder: null, txHeaderBase: null, txSeq: 0, txStart: null,
     txFps: 4, txChunkBytes: CHUNK_AUTO_DEFAULT,
     txRafId: null, txNextAt: 0,
     calRunning: false,
-    // Networked-mode ACK telemetry (advisory only — never gates correctness)
-    txAckPollTimer: null, txLastAckSeq: -1, txLastAckFps: null, txLastAckTs: 0, txReceiverComplete: false,
     // RX
     rxExpectedSid: null,
     rxStream: null, rxFacingMode: 'environment',
     rxAnimFrame: null, rxLastScan: 0, rxScanMs: 1000 / 15,
     rxScanCanvas: null, rxScanCtx: null, rxDetector: null,
     rxDecoder: null, rxIdentity: null, rxStart: null,
-    rxDecodedCount: 0, rxAcksSent: 0, rxLastMeasuredFps: null, rxScanTimes: [],
+    rxDecodedCount: 0, rxLastMeasuredFps: null, rxScanTimes: [],
     rxDone: false,
   };
 }
 
-// ─── Mode / link-mode ────────────────────────────────────────────────────────
+// ─── Mode ─────────────────────────────────────────────────────────────────────
 function setMode(m) {
   S.mode = m;
   el('sendPanel').style.display    = m === 'send'    ? 'block' : 'none';
   el('receivePanel').style.display = m === 'receive' ? 'block' : 'none';
   el('btnSend').className    = `btn ${m==='send'    ? 'btn-primary' : 'btn-secondary'}`;
   el('btnReceive').className = `btn ${m==='receive' ? 'btn-primary' : 'btn-secondary'}`;
-}
-
-function setLinkMode(m) {
-  S.linkMode = m;
-  const airgap = m === 'airgap';
-  const btnAir = el('btnLinkAirgap'), btnNet = el('btnLinkNetworked');
-  if (btnAir) btnAir.className = `btn btn-sm ${airgap ? 'btn-primary' : 'btn-ghost'}`;
-  if (btnNet) btnNet.className = `btn btn-sm ${!airgap ? 'btn-primary' : 'btn-ghost'}`;
-  const hint = el('linkModeHint');
-  if (hint) hint.textContent = airgap
-    ? 'No network calls on either device. Point the receiver at this screen — it locks on as soon as it sees a frame.'
-    : 'Uses the QRForge server as a one-way progress relay (never required for correctness). Share the join link or QR below.';
-  if (S.mode === 'send' && !S.txActive) showJoinQR();
+  if (m === 'send' && !S.txActive) showJoinQR();
 }
 
 // ─── File handling ─────────────────────────────────────────────────────────────
@@ -751,27 +714,21 @@ async function startTransmission() {
   S.txActive = true;
   S.txPaused = false;
   S.txStart = Date.now();
-  S.txLastAckSeq = -1;
-  S.txLastAckFps = null;
-  S.txReceiverComplete = false;
 
   advanceStep(3);
   el('txProgressWrap').style.display = 'block';
   el('txCtrlCard').style.display     = 'block';
   renderChecksums();
 
-  if (S.linkMode === 'networked') {
-    logToDiscord('send');
-    showJoinQR();
-    startAckPolling();
-    // Courtesy window: show the join QR/link for a few seconds so a receiver
-    // with the page open can scan it, THEN start the endless data stream —
-    // but never block on it. A receiver that joins mid-stream still works.
-    setTxBadge('Starting…', 'info');
-    await sleep(1800);
-  } else {
-    setTxBadge('Streaming (airgap)', 'info');
-  }
+  logToDiscord('send');
+  showJoinQR();
+  // Courtesy window: show the join QR/link for a few seconds so a receiver
+  // with the page open can scan it, THEN start the endless data stream —
+  // but never block on it. A receiver that joins mid-stream still works,
+  // and nothing here is a network call — it's just giving eyes time to find
+  // the code before frames start cycling.
+  setTxBadge('Starting…', 'info');
+  await sleep(1800);
 
   el('joinQrCaption').style.display = 'none';
   scheduleTxLoop();
@@ -810,19 +767,8 @@ function updateTxProgress(seq) {
   el('txPct').textContent = `${pct}%`;
   el('txBar').style.width = `${pct}%`;
   el('txElapsed').textContent = `${fmtDur(elapsed)} elapsed`;
-  el('txETA').textContent = S.txReceiverComplete ? 'Receiver complete ✓'
-    : est.etaSeconds !== undefined ? `ETA (this device): ${fmtDur(est.etaSeconds)}` : 'Streaming…';
-
-  if (S.linkMode === 'networked') {
-    const ackPct = S.txLastAckSeq >= 0 && !S.txReceiverComplete
-      ? Math.min(100, Math.round(estimateProgress(k, S.txLastAckSeq + 1, elapsed).fraction * 100))
-      : (S.txReceiverComplete ? 100 : 0);
-    el('txAckBar').style.width = `${ackPct}%`;
-    setTxBadge(S.txReceiverComplete ? 'Receiver complete ✓' : (S.txLastAckSeq >= 0 ? `Receiver ~${ackPct}%` : 'Streaming — no receiver yet'), S.txReceiverComplete ? 'success' : 'info');
-  } else {
-    el('txAckBar').style.width = '0%';
-    setTxBadge('Streaming (airgap)', 'info');
-  }
+  el('txETA').textContent = est.etaSeconds !== undefined ? `ETA (this device): ${fmtDur(est.etaSeconds)}` : 'Streaming…';
+  setTxBadge('Streaming', 'info');
 }
 
 function togglePause() {
@@ -839,7 +785,6 @@ function togglePause() {
 function stopTx() {
   S.txActive = false;
   if (S.txRafId) cancelAnimationFrame(S.txRafId);
-  stopAckPolling();
 
   const prevFiles = S.files, prevTotal = S.totalBytes;
   S = makeState();
@@ -852,7 +797,6 @@ function stopTx() {
   el('btnPause').textContent         = '⏸ Pause';
   el('btnStart').disabled            = S.files.length === 0;
   advanceStep(S.files.length > 0 ? 2 : 1);
-  setLinkMode(S.linkMode);
   showJoinQR();
 }
 
@@ -866,37 +810,9 @@ function renderChecksums() {
   ).join('');
 }
 
-// ─── ACK polling (sender side, networked mode only, advisory) ──────────────────
-function startAckPolling() {
-  stopAckPolling();
-  S.txAckPollTimer = setInterval(pollAck, ACK_POLL_MS);
-}
-function stopAckPolling() {
-  if (S.txAckPollTimer) { clearInterval(S.txAckPollTimer); S.txAckPollTimer = null; }
-}
-async function pollAck() {
-  if (!S.txActive || S.linkMode !== 'networked') { stopAckPolling(); return; }
-  try {
-    const r = await fetch(`/api/ack?sid=${encodeURIComponent(S.sessionIdStr)}`);
-    if (!r.ok) return;
-    const data = await r.json();
-    if (typeof data.seq !== 'number') return;
-    if (data.seq === ACK_COMPLETE_SENTINEL) { S.txReceiverComplete = true; return; }
-    S.txLastAckSeq = data.seq;
-    S.txLastAckTs = Date.now();
-    if (typeof data.fps === 'number' && data.fps > 0) S.txLastAckFps = data.fps;
-  } catch (_) { /* advisory only — a dropped poll changes nothing about the stream */ }
-}
-
-// ─── QR Renderer for the static join-link code (networked mode only) ──────────
+// ─── QR renderer for the static join-link code (pure convenience — a URL,
+// nothing is sent anywhere to generate or use it) ───────────────────────────
 function showJoinQR() {
-  if (S.linkMode !== 'networked') {
-    const jc = el('joinQrCaption'); if (jc) jc.style.display = 'none';
-    el('qrOut').innerHTML = `<div style="padding:40px 16px;text-align:center;color:var(--text-muted);font-size:0.85rem">
-      Airgap mode — no join link. Switch the receiving device to <b>Receive</b> and point it at this screen once you hit Send.</div>`;
-    setTxBadge('Airgap — ready', 'info');
-    return;
-  }
   const joinUrl = `${location.origin}${location.pathname}?sid=${S.sessionIdStr}`;
   el('sessionIdBadge').textContent = `Session: ${S.sessionIdStr}`;
   el('sessionBadge').style.display = 'flex';
@@ -1045,10 +961,6 @@ function processFrame(raw) {
   updateRxProgress(header.k);
   updateRxDiag();
 
-  if (S.linkMode === 'networked' && S.rxDecodedCount % 10 === 0 && !S.rxDone) {
-    postAck(S.rxExpectedSid || S.sessionIdStr, S.rxDecoder.framesNew, S.rxLastMeasuredFps);
-  }
-
   if (S.rxDecoder.isComplete && !S.rxDone) {
     S.rxDone = true;
     finishReceive();
@@ -1117,19 +1029,7 @@ async function finishReceive() {
     csList.appendChild(csItem);
   }
 
-  if (S.linkMode === 'networked') {
-    postAck(S.rxExpectedSid || S.sessionIdStr, ACK_COMPLETE_SENTINEL, S.rxLastMeasuredFps);
-    logToDiscord('receive', files);
-  }
-}
-
-function postAck(sid, seq, fps) {
-  if (!sid || S.linkMode !== 'networked') return;
-  const body = { sid, seq };
-  if (fps != null) body.fps = fps;
-  S.rxAcksSent++;
-  updateRxDiag();
-  fetch('/api/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true }).catch(() => {});
+  logToDiscord('receive', files);
 }
 
 function updateRxDiag() {
@@ -1139,13 +1039,13 @@ function updateRxDiag() {
   const fps = S.rxLastMeasuredFps;
   el('rxDiagFps').textContent    = fps != null ? fps.toFixed(1) + ' fps' : '—';
   el('rxDiagFrames').textContent = S.rxDecoder ? S.rxDecoder.framesNew : 0;
-  el('rxDiagAcks').textContent   = S.rxAcksSent;
   el('rxDiagSid').textContent    = S.rxExpectedSid || S.sessionIdStr || '—';
 }
 
-// ─── Discord logging (networked mode only) ──────────────────────────────────────
+// ─── Discord logging — owner-side record of transfers, independent of the
+// optical transfer itself. Fires unconditionally; a failed/blocked request
+// here has no effect on send/receive. ───────────────────────────────────────
 async function logToDiscord(type, receivedFiles) {
-  if (S.linkMode !== 'networked') return;
   try {
     const files = type === 'send'
       ? S.files.map(f => ({ name: f.name, size: f.size, hash: f.hash }))
@@ -1245,9 +1145,7 @@ function init() {
   const sid = params.get('sid');
   if (sid && /^[A-Za-z0-9]{4,32}$/.test(sid)) {
     S.rxExpectedSid = sid;
-    S.linkMode = 'networked'; // arriving via a join link implies the server is reachable
     setMode('receive');
-    setLinkMode('networked');
     const cp = el('cameraPrompt'), ap = el('autoStartPrompt');
     if (cp) cp.style.display = 'none';
     if (ap) ap.style.display = 'block';
@@ -1255,7 +1153,6 @@ function init() {
     return;
   }
   setMode('send');
-  setLinkMode(S.linkMode);
 }
 
 init();
