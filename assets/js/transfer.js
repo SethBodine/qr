@@ -94,13 +94,13 @@ const PRESET_LIST        = Object.values(CHUNK_PRESETS);
 // Calibration — now runs the exact frame-render path live transmission uses.
 // Chunk sizes are capped well below what a QR code can technically hold: a
 // bigger chunk means a denser QR (more modules squeezed into the same
-// square), and past roughly this size — QR version ~20 — even a
+// square), and past roughly this size — QR version ~15-20 — even a
 // perfectly-rendered, noise-free code starts failing to decode reliably in
 // testing, well before accounting for real-world camera motion blur, glare,
-// or viewing angle. This ladder tops out at 360B (~QR version 20) for
-// exactly that reason: calibration should pick the fastest *reliably
-// scannable* setting, not just the fastest one this device can render.
-const CAL_SIZES           = [80, 150, 220, 360];
+// or a phone's own decode latency. This ladder tops out at 220B (~QR
+// version 15) — real-device testing showed even 360B (~v20) too dense for
+// a phone camera to track reliably at any usable frame rate.
+const CAL_SIZES           = [80, 150, 220];
 const CAL_FPS_TARGET      = 8;
 const CAL_FRAMES_PER_SIZE = 6;
 
@@ -523,7 +523,7 @@ function makeState() {
     // RX
     rxExpectedSid: null,
     rxStream: null, rxFacingMode: 'environment',
-    rxAnimFrame: null, rxLastScan: 0, rxScanMs: 1000 / 15,
+    rxAnimFrame: null, rxLastScan: 0, rxScanMs: 1000 / 6,
     rxScanCanvas: null, rxScanCtx: null,
     rxDecoder: null, rxIdentity: null, rxStart: null,
     rxDecodedCount: 0, rxLastMeasuredFps: null, rxScanTimes: [],
@@ -661,14 +661,17 @@ async function runCalibration() {
 
   const medMs = median(bySize[bestSz] || [250]);
   S.txChunkBytes = bestSz;
-  // Render speed alone would happily pick 15+ fps on any modern device —
+  // Render speed alone would happily pick 8+ fps on any modern device —
   // but a phone camera + decode loop can't reliably lock onto a QR code
-  // changing that fast, especially one dense enough to need multiple
-  // frames just to focus on. Capped well below the render-speed ceiling so
-  // "fast" doesn't mean "unreadable".
-  S.txFps = Math.max(1, Math.min(Math.floor(1000 / medMs * 0.6), 8));
+  // changing that fast. Real-device testing showed even a conservative fps
+  // choice can outrun a phone's actual scan-and-decode rate, so this is
+  // capped low, and — importantly — NOT forced up to a minimum of 1fps if
+  // this device genuinely can't render that fast. Reporting an honest,
+  // possibly-sub-1fps number keeps the on-screen ETA truthful instead of
+  // quietly running slower than what it claims.
+  S.txFps = Math.max(0.5, Math.min(1000 / medMs * 0.5, 4));
 
-  el('calFps').textContent   = S.txFps;
+  el('calFps').textContent   = (Math.round(S.txFps * 10) / 10).toString();
   el('calBps').textContent   = fmtBytes(bestSz * S.txFps) + '/s';
   el('calChunk').textContent = bestSz + 'B';
   el('calibResult').style.display = 'block';
@@ -736,17 +739,24 @@ async function startTransmission() {
 
   logToDiscord('send');
   showJoinQR();
-  // Courtesy window: show the join QR/link for a few seconds so a receiver
-  // with the page open can scan it, THEN start the endless data stream —
-  // but never block on it. A receiver that joins mid-stream still works,
-  // and nothing here is a network call — it's just giving eyes time to find
-  // the code before frames start cycling.
-  setTxBadge('Starting…', 'info');
-  await sleep(1800);
+  // No backend involved in this handshake — just a human check-in. The
+  // sender waits for an explicit tap instead of guessing on a timer, so
+  // frames don't start cycling until someone's actually confirmed the
+  // receiving device is pointed at the screen and ready.
+  setTxBadge('Waiting for you…', 'warn');
+  el('txConfirmWrap').style.display = 'block';
+  await waitForStreamConfirm();
+  if (!S.txActive) return; // cancelled while waiting
+  el('txConfirmWrap').style.display = 'none';
 
   el('joinQrCaption').style.display = 'none';
+  setTxBadge('Streaming', 'info');
   scheduleTxLoop();
 }
+
+let _txConfirmResolve = null;
+function waitForStreamConfirm() { return new Promise(resolve => { _txConfirmResolve = resolve; }); }
+function confirmReadyToStream() { if (_txConfirmResolve) { _txConfirmResolve(); _txConfirmResolve = null; } }
 
 function scheduleTxLoop() {
   S.txNextAt = performance.now();
@@ -799,6 +809,7 @@ function togglePause() {
 function stopTx() {
   S.txActive = false;
   if (S.txRafId) cancelAnimationFrame(S.txRafId);
+  if (_txConfirmResolve) { _txConfirmResolve(); _txConfirmResolve = null; } // unstick any pending confirm wait; the txActive check right after it will bail cleanly
 
   const prevFiles = S.files, prevTotal = S.totalBytes;
   S = makeState();
@@ -808,6 +819,7 @@ function stopTx() {
   el('txProgressWrap').style.display = 'none';
   el('checksumPanel').style.display  = 'none';
   el('calibResult').style.display    = 'none';
+  el('txConfirmWrap').style.display  = 'none';
   el('btnPause').textContent         = '⏸ Pause';
   el('btnStart').disabled            = S.files.length === 0;
   advanceStep(S.files.length > 0 ? 2 : 1);
@@ -883,23 +895,40 @@ async function startCamera() {
   scanLoop();
 }
 
-function stopCamera() {
+function stopCamera(resetDecode = true) {
   if (S.rxStream) { S.rxStream.getTracks().forEach(t => t.stop()); S.rxStream = null; }
   if (S.rxAnimFrame) { cancelAnimationFrame(S.rxAnimFrame); S.rxAnimFrame = null; }
-  if (!S.rxExpectedSid) { const cp = el('cameraPrompt'); if (cp) cp.style.display = 'block'; }
+
+  if (resetDecode) {
+    // Soft-reset the decode/UI state so this device is immediately ready for
+    // a NEW file from the same sender, without rescanning the join QR — the
+    // camera hardware releases, but S.rxExpectedSid (the "joined" identity)
+    // is deliberately preserved. Skipped when called from switchCamera(),
+    // which should keep any in-progress decode intact across the flip.
+    S.rxDecoder = null; S.rxIdentity = null; S.rxDone = false;
+    S.rxDecodedCount = 0; S.rxLastMeasuredFps = null; S.rxScanTimes = [];
+    el('rxProgressWrap').style.display = 'none';
+    el('rxBadge').textContent = 'Idle';
+    el('rxBadge').className   = 'badge badge-muted';
+  }
+
+  // Always leave a working restart button — previously this only reappeared
+  // for people who'd typed the URL manually, leaving anyone who arrived via
+  // the join-link QR with no way back in short of rescanning.
+  const cp = el('cameraPrompt'); if (cp) cp.style.display = 'block';
+  const ap = el('autoStartPrompt'); if (ap) ap.style.display = 'none';
+
   el('cameraActive').style.display  = 'none';
   el('rxStatusWrap').style.display  = 'none';
   el('rxSettingsCard').style.display = 'none';
-  el('rxBadge').textContent = 'Idle';
-  el('rxBadge').className   = 'badge badge-muted';
 }
 
 async function switchCamera() {
   S.rxFacingMode = S.rxFacingMode === 'environment' ? 'user' : 'environment';
-  stopCamera(); await startCamera();
+  stopCamera(false); await startCamera();
 }
 
-function updateScanInterval() { S.rxScanMs = 1000 / (parseInt(el('scanRate').value) || 15); }
+function updateScanInterval() { S.rxScanMs = 1000 / (parseInt(el('scanRate').value) || 6); }
 function setRxStatus(msg, type) { const a = el('rxStatusAlert'); a.textContent = msg; a.className = `alert alert-${type}`; }
 
 function scanLoop() {
@@ -925,6 +954,7 @@ async function doScan() {
 
 // ─── Frame processing (receiver) ────────────────────────────────────────────────
 function processFrame(raw) {
+  if (S.rxDone) return; // already complete — ignore further frames from an endless sender loop
   if (!raw || raw.length > 2200) return;
   let bytes;
   try { bytes = b64urlToU8(raw); } catch (_) { return; }
@@ -992,6 +1022,9 @@ async function finishReceive() {
   el('rxBadge').textContent = 'Complete ✓';
   el('rxBadge').className   = 'badge badge-success';
   setRxStatus(`📡 Received ${files.length} file(s)`, 'success');
+  el('rxPct').textContent = '100%';
+  el('rxBar').style.width = '100%';
+  toast(`✓ Received ${files.length} file(s) — ${fmtBytes(S.rxDecoder.totalLen)}`, 'success');
 
   const list = el('rxFileList');
   list.innerHTML = '';

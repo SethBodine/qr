@@ -305,6 +305,13 @@
                style="font-size:0.72rem;font-family:var(--font-mono);color:var(--accent);word-break:break-all;opacity:0.8"></a>
           </div>
 
+          <div id="txConfirmWrap" style="display:none;margin-top:14px">
+            <button class="btn btn-primary btn-full" onclick="confirmReadyToStream()">▶ Receiver is ready — Start Streaming</button>
+            <p style="font-size:0.76rem;color:var(--text-muted);margin-top:8px;text-align:center">
+              Point the receiving device's camera at this screen first, then tap. Frames won't start until you do — no guessing, no timer.
+            </p>
+          </div>
+
           <div id="txProgressWrap" style="display:none;margin-top:14px">
             <div class="progress-label">
               <span class="mono" id="txFrameLabel">Frame 0 / 0</span>
@@ -395,8 +402,8 @@
         <div class="card" id="rxSettingsCard" style="display:none">
           <div class="card-title"><span class="dot"></span>Scan Settings</div>
           <div class="field">
-            <label>Scan Rate — <span id="scanRateLabel">15</span>/sec</label>
-            <input type="range" id="scanRate" min="2" max="30" value="15"
+            <label>Scan Rate — <span id="scanRateLabel">6</span>/sec</label>
+            <input type="range" id="scanRate" min="2" max="30" value="6"
                    oninput="el('scanRateLabel').textContent=this.value;updateScanInterval()"/>
           </div>
         </div>
