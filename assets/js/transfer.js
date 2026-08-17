@@ -92,7 +92,15 @@ const CHUNK_AUTO_DEFAULT = 220;
 const PRESET_LIST        = Object.values(CHUNK_PRESETS);
 
 // Calibration — now runs the exact frame-render path live transmission uses.
-const CAL_SIZES           = [80, 150, 220, 360, 500, 680, 820];
+// Chunk sizes are capped well below what a QR code can technically hold: a
+// bigger chunk means a denser QR (more modules squeezed into the same
+// square), and past roughly this size — QR version ~20 — even a
+// perfectly-rendered, noise-free code starts failing to decode reliably in
+// testing, well before accounting for real-world camera motion blur, glare,
+// or viewing angle. This ladder tops out at 360B (~QR version 20) for
+// exactly that reason: calibration should pick the fastest *reliably
+// scannable* setting, not just the fastest one this device can render.
+const CAL_SIZES           = [80, 150, 220, 360];
 const CAL_FPS_TARGET      = 8;
 const CAL_FRAMES_PER_SIZE = 6;
 
@@ -516,7 +524,7 @@ function makeState() {
     rxExpectedSid: null,
     rxStream: null, rxFacingMode: 'environment',
     rxAnimFrame: null, rxLastScan: 0, rxScanMs: 1000 / 15,
-    rxScanCanvas: null, rxScanCtx: null, rxDetector: null,
+    rxScanCanvas: null, rxScanCtx: null,
     rxDecoder: null, rxIdentity: null, rxStart: null,
     rxDecodedCount: 0, rxLastMeasuredFps: null, rxScanTimes: [],
     rxDone: false,
@@ -591,25 +599,17 @@ async function hashAllFiles() {
 }
 
 function updateSummary() {
-  const chunkBytes = getChunkBytes();
+  const chunkBytes = S.txChunkBytes;
   // Rough directory overhead estimate so the frame count shown before Start
   // is in the right ballpark (exact figure appears once the encoder builds).
   const dirEstimate = 6 + S.files.length * 80;
   const payloadEstimate = S.totalBytes + dirEstimate;
   const k = Math.max(1, Math.ceil(payloadEstimate / chunkBytes));
   const expectedFrames = Math.ceil(k * expectedFountainOverhead(k));
-  const fps = parseInt(el('fpsSlider').value) || 4;
   el('statFiles').textContent  = S.files.length;
   el('statSize').textContent   = fmtBytes(S.totalBytes);
   el('statChunks').textContent = expectedFrames.toLocaleString() + ' (est.)';
-  el('statETA').textContent    = fmtDur(expectedFrames / fps);
-}
-
-function updateETA() { updateSummary(); }
-function getChunkBytes() {
-  const mode = el('chunkMode').value;
-  const raw = mode === 'auto' ? S.txChunkBytes : (CHUNK_PRESETS[mode] || CHUNK_AUTO_DEFAULT);
-  return Math.min(raw, QR_MAX_CHUNK_BYTES);
+  el('statETA').textContent    = fmtDur(expectedFrames / S.txFps);
 }
 
 // ─── Unified frame renderer — the ONE code path calibration and live TX both
@@ -661,10 +661,13 @@ async function runCalibration() {
 
   const medMs = median(bySize[bestSz] || [250]);
   S.txChunkBytes = bestSz;
-  S.txFps = Math.max(1, Math.min(Math.floor(1000 / medMs * 0.8), 15));
+  // Render speed alone would happily pick 15+ fps on any modern device —
+  // but a phone camera + decode loop can't reliably lock onto a QR code
+  // changing that fast, especially one dense enough to need multiple
+  // frames just to focus on. Capped well below the render-speed ceiling so
+  // "fast" doesn't mean "unreadable".
+  S.txFps = Math.max(1, Math.min(Math.floor(1000 / medMs * 0.6), 8));
 
-  el('fpsSlider').value      = S.txFps;
-  el('fpsLabel').textContent = S.txFps;
   el('calFps').textContent   = S.txFps;
   el('calBps').textContent   = fmtBytes(bestSz * S.txFps) + '/s';
   el('calChunk').textContent = bestSz + 'B';
@@ -680,8 +683,9 @@ async function startTransmission() {
   advanceStep(2);
 
   await runCalibration();
-  S.txFps = parseInt(el('fpsSlider').value) || 4;
-  S.txChunkBytes = getChunkBytes();
+  // S.txFps and S.txChunkBytes are set directly by runCalibration() above —
+  // this device's own measured render speed, nothing left to read from a
+  // manual control.
 
   toast('Packing files…', 'info');
   const container = await packContainer(
@@ -689,20 +693,30 @@ async function startTransmission() {
     el('compressMode').value,
   );
 
-  const frameBytes = S.txChunkBytes + HEADER_LEN;
+  let frameBytes = S.txChunkBytes + HEADER_LEN;
   if (!fitsInOneStream(container.length, frameBytes)) {
-    const offered = PRESET_LIST.filter(v => v <= QR_MAX_CHUNK_BYTES).map(v => v + HEADER_LEN);
+    // Calibration optimises for reliable rendering, not for fitting the
+    // largest possible payload — for a big transfer, automatically retry
+    // once at the largest chunk size a QR code can physically carry before
+    // giving up. Scan reliability may drop, but it's the only way to move
+    // the ceiling now that there's no manual chunk-size control to point
+    // someone at.
+    const offered = PRESET_LIST.concat(QR_MAX_CHUNK_BYTES).filter(v => v <= QR_MAX_CHUNK_BYTES).map(v => v + HEADER_LEN);
     const suggestion = smallestSufficientFrameSize(container.length, offered);
-    const need = sourceBlockCount(container.length, frameBytes).toLocaleString();
-    el('btnStart').disabled = false;
-    toast(
-      suggestion
-        ? `${fmtBytes(container.length)} needs ${need} blocks at this chunk size — raise Chunk Size to fit ${suggestion - HEADER_LEN}B blocks or larger.`
-        : `${fmtBytes(container.length)} is too large for a single optical stream (ceiling ≈ ${fmtBytes(QR_MAX_CHUNK_BYTES * MAX_SOURCE_BLOCKS)}). Remove some files.`,
-      'danger',
-    );
-    advanceStep(S.files.length > 0 ? 2 : 1);
-    return;
+    if (suggestion) {
+      S.txChunkBytes = suggestion - HEADER_LEN;
+      frameBytes = suggestion;
+      toast(`Large transfer — using a bigger QR chunk size to fit it. Keep the screen steady; scans may take a couple of tries.`, 'warn');
+    } else {
+      const need = sourceBlockCount(container.length, frameBytes).toLocaleString();
+      el('btnStart').disabled = false;
+      toast(
+        `${fmtBytes(container.length)} needs ${need} blocks — too large for a single optical stream (ceiling ≈ ${fmtBytes(QR_MAX_CHUNK_BYTES * MAX_SOURCE_BLOCKS)}). Remove some files.`,
+        'danger',
+      );
+      advanceStep(S.files.length > 0 ? 2 : 1);
+      return;
+    }
   }
 
   const blockLen = blockLength(frameBytes);
@@ -836,21 +850,7 @@ function setTxBadge(text, type) {
 }
 
 // ─── Camera / Receive ──────────────────────────────────────────────────────────
-function checkBarcodeSupport() {
-  if ('BarcodeDetector' in window) return true;
-  const ua = navigator.userAgent;
-  let msg;
-  if (/Firefox/i.test(ua)) msg = '⚠ Firefox does not support QR scanning (BarcodeDetector API). Please use Chrome or Edge on this device.';
-  else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) msg = '⚠ Safari does not support QR scanning (BarcodeDetector API). Please use Chrome on iOS or switch to a Mac/PC with Chrome.';
-  else msg = '⚠ This browser does not support QR scanning. Please use Chrome 83+, Edge 83+, or Samsung Internet 13+.';
-  el('browserWarning').textContent  = msg;
-  el('browserWarning').style.display = 'block';
-  el('cameraPrompt').style.display   = 'none';
-  return false;
-}
-
 async function startCamera() {
-  if (!checkBarcodeSupport()) return;
   try {
     const constraints = { video: { facingMode: { ideal: S.rxFacingMode }, width: { ideal: 1280 }, height: { ideal: 720 } } };
     S.rxStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -878,7 +878,6 @@ async function startCamera() {
 
   S.rxScanCanvas = document.createElement('canvas');
   S.rxScanCtx = S.rxScanCanvas.getContext('2d', { willReadFrequently: true });
-  S.rxDetector = new BarcodeDetector({ formats: ['qr_code'] });
   S.rxLastScan = 0;
   setRxStatus('📡 Waiting for sender to start…', 'info');
   scanLoop();
@@ -913,13 +912,14 @@ function scanLoop() {
 
 async function doScan() {
   const vid = el('camVideo');
-  if (!vid || vid.readyState < 2 || !S.rxDetector) return;
+  if (!vid || vid.readyState < 2) return;
   const canvas = S.rxScanCanvas;
   canvas.width = vid.videoWidth; canvas.height = vid.videoHeight;
   S.rxScanCtx.drawImage(vid, 0, 0);
   try {
-    const results = await S.rxDetector.detect(canvas);
-    if (results.length > 0) processFrame(results[0].rawValue);
+    const imageData = S.rxScanCtx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+    if (code && code.data) processFrame(code.data);
   } catch (_) {}
 }
 

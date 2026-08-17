@@ -26,6 +26,7 @@
   <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"
           integrity="sha384-rNlaE5fs9dGIjmxWDALQh/RBAaGRYT5ChrzHo6tRfgrZ36iRFAiquP5g41Jsv+0j"
           crossorigin="anonymous"></script>
+  <script src="assets/js/jsQR.min.js"></script>
   <style>
     /* ── Transfer-specific mobile-first overrides ── */
     .transfer-grid {
@@ -138,12 +139,6 @@
       margin-bottom: 20px;
     }
     .mode-toggle .btn { flex: 1; }
-
-    /* Browser warning */
-    #browserWarning {
-      display: none;
-      margin-bottom: 16px;
-    }
 
     /* Join QR caption */
     #joinQrCaption {
@@ -265,24 +260,7 @@
 
         <div class="card">
           <div class="card-title"><span class="dot"></span>Settings</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="field">
-              <label>Chunk Size</label>
-              <select id="chunkMode">
-                <option value="auto" selected>Auto (calibrated)</option>
-                <option value="s">Small — 80 B</option>
-                <option value="m">Medium — 220 B</option>
-                <option value="l">Large — 460 B</option>
-                <option value="xl">XL — 820 B</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>FPS — <span id="fpsLabel">4</span></label>
-              <input type="range" id="fpsSlider" min="1" max="20" value="4"
-                     oninput="el('fpsLabel').textContent=this.value;updateETA()"/>
-            </div>
-          </div>
-          <div class="field" style="margin-top:10px">
+          <div class="field">
             <label>Compression</label>
             <select id="compressMode">
               <option value="auto" selected>Auto</option>
@@ -291,12 +269,13 @@
             </select>
           </div>
           <div class="alert alert-info" style="font-size:0.82rem;margin-top:10px">
-            💡 Fountain-coded — the receiver rebuilds the file from any ~15% extra frames, in any order, so calibration only measures <em>this</em> device's own render speed. Nothing has to hear back from the receiver before streaming starts.
+            💡 Frame rate and QR chunk size are auto-tuned to this device — clicking Send briefly renders a few test frames to itself to measure how fast it can paint, then locks in the fastest reliable setting. That's the whole "calibration" step: this device timing itself, before the receiver is even involved. Fountain-coded frames mean the receiver rebuilds the file from any ~15% extra frames, in any order, so nothing has to hear back before streaming starts.
           </div>
           <div style="margin-top:14px">
             <button class="btn btn-primary btn-full" id="btnStart" onclick="startTransmission()" disabled>▶ Send</button>
           </div>
           <div id="calibResult" style="display:none;margin-top:12px;padding:12px;background:var(--bg);border-radius:var(--radius);border:1px solid rgba(0,245,200,0.15)">
+            <div style="font-size:0.72rem;color:var(--text-muted);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px">Auto-tuned for this device</div>
             <div class="stats">
               <div class="stat"><div class="stat-value" id="calFps">—</div><div class="stat-label">FPS</div></div>
               <div class="stat"><div class="stat-value" id="calBps">—</div><div class="stat-label">Byte/s</div></div>
@@ -359,9 +338,6 @@
 
   <!-- ═══════════ RECEIVE PANEL ═══════════ -->
   <div id="receivePanel" style="display:none">
-
-    <!-- Browser support warning — shown before camera starts if unsupported -->
-    <div class="alert alert-danger" id="browserWarning"></div>
 
     <div class="transfer-grid">
 

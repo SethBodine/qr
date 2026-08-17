@@ -1,6 +1,4 @@
 # This file is the deployed Cloudflare Pages headers (output dir = ".").
-# public/_headers is used only during `vite dev` — do not rely on it for production.
-# If you ever switch to a Vite build step, consolidate headers here and delete public/_headers.
 /*
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff

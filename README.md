@@ -82,7 +82,7 @@ qrforge/
 │   └── api/
 │       └── log.js        # Cloudflare Pages Function — posts transfer metadata to Discord
 ├── _headers              # Cloudflare Pages security headers (deployed)
-├── public/_headers       # Headers for `vite dev` only — not deployed
+├── public/site.webmanifest # PWA manifest (deployed)
 ├── wrangler.toml         # Cloudflare project config (name, output dir, env vars)
 └── .github/
     └── workflows/
